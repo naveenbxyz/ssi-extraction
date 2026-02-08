@@ -11,6 +11,13 @@ def _clean(text: str) -> str:
     return " ".join(text.replace("\xa0", " ").strip().split())
 
 
+def _normalize_attribute_key(text: str) -> str:
+    key = _clean(text)
+    # Common table formatting has a trailing ":" after attribute names.
+    key = re.sub(r"[:\uFF1A]+\s*$", "", key).strip()
+    return key
+
+
 def _is_serial_number(text: str) -> bool:
     token = text.strip()
     if not token:
@@ -24,21 +31,21 @@ def _row_to_key_value(cells: list[str]) -> tuple[str, str] | None:
 
     # ISDA table convention (primary): col1 = serial number, col2 = attribute/question, col3+ = value.
     if len(cells) >= 3 and _is_serial_number(cells[0]):
-        key = cells[1].strip()
+        key = _normalize_attribute_key(cells[1])
         value = " | ".join([c.strip() for c in cells[2:] if c.strip()]).strip()
         if value:
             return key, value
 
     # Some documents may have blank first cell with key/value shifted right.
     if len(cells) >= 3 and not cells[0].strip() and cells[1].strip():
-        key = cells[1].strip()
+        key = _normalize_attribute_key(cells[1])
         value = " | ".join([c.strip() for c in cells[2:] if c.strip()]).strip()
         if value:
             return key, value
 
     populated = [c for c in cells if c]
     if len(populated) >= 2 and populated[0]:
-        key = populated[0]
+        key = _normalize_attribute_key(populated[0])
         value = " | ".join(populated[1:]).strip()
         if value:
             return key, value

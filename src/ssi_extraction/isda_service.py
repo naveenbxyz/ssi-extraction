@@ -18,6 +18,20 @@ def _normalize_key(text: str) -> str:
     return re.sub(r"[^a-z0-9]", "", text.lower())
 
 
+def _infer_field_name(raw_key: str) -> str:
+    key = raw_key.strip().lower()
+    key = re.sub(r"[\r\n\t]+", " ", key)
+    key = re.sub(r"[^a-z0-9]+", "_", key)
+    key = re.sub(r"_+", "_", key).strip("_")
+    if not key:
+        return ""
+    if re.fullmatch(r"\d+", key):
+        return ""
+    if len(key) < 3:
+        return ""
+    return key[:120]
+
+
 def _build_alias_index(field_aliases: dict[str, list[str]]) -> dict[str, str]:
     index: dict[str, str] = {}
     for canonical, aliases in field_aliases.items():
@@ -64,14 +78,27 @@ def _rule_based_seed(payload: dict[str, Any], config: dict[str, Any]) -> dict[st
                     "notes": f"Derived from table key: {key}",
                 }
         else:
-            additional_fields.append(
-                {
-                    "field_name": key,
-                    "value": value,
-                    "source": "table",
-                    "notes": "Unmapped table key",
-                }
-            )
+            inferred = _infer_field_name(key)
+            if inferred:
+                existing = merged_values.get(inferred)
+                if existing and value not in existing["value"]:
+                    existing["value"] = f"{existing['value']} ; {value}"
+                elif not existing:
+                    merged_values[inferred] = {
+                        "field_name": inferred,
+                        "value": value,
+                        "source": "table",
+                        "notes": f"Inferred field name from table key: {key}",
+                    }
+            else:
+                additional_fields.append(
+                    {
+                        "field_name": key,
+                        "value": value,
+                        "source": "table",
+                        "notes": "Unmapped table key",
+                    }
+                )
 
     normalized_fields = list(merged_values.values())
 
@@ -129,6 +156,10 @@ def _build_extraction_user_prompt(raw_payload: dict[str, Any], seed: dict[str, A
         "- Column 3 (and any following columns) contain the value.\n"
         "- Do not produce numeric field names like '1', '2', etc.\n\n"
         f"Target schema:\n{json.dumps(schema, ensure_ascii=True)}\n\n"
+        "Canonical field names are guidance, not a strict whitelist.\n"
+        "If a table attribute does not map to a canonical field, create a meaningful snake_case field_name "
+        "and keep it under normalized_fields.\n"
+        "Only use additional_fields for truly miscellaneous content that cannot be represented as a field.\n\n"
         f"Canonical field names to prefer:\n{json.dumps(canonical_fields, ensure_ascii=True)}\n\n"
         f"Field alias mapping:\n{json.dumps(field_aliases, ensure_ascii=True)}\n\n"
         f"Rule-based seed:\n{json.dumps(seed, ensure_ascii=True)}\n\n"
@@ -161,6 +192,29 @@ def _normalize_field_entries(entries: Any) -> list[dict[str, str]]:
     return normalized
 
 
+def _promote_additional_to_normalized(
+    additional_entries: list[dict[str, str]],
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    promoted: list[dict[str, str]] = []
+    residual: list[dict[str, str]] = []
+
+    for item in additional_entries:
+        inferred = _infer_field_name(item.get("field_name", ""))
+        if inferred:
+            promoted.append(
+                {
+                    "field_name": inferred,
+                    "value": item.get("value", ""),
+                    "source": item.get("source", "") or "inferred",
+                    "notes": f"{item.get('notes', '')} | promoted_from_additional".strip(" |"),
+                }
+            )
+        else:
+            residual.append(item)
+
+    return promoted, residual
+
+
 def _dedupe_fields(fields: list[dict[str, str]]) -> list[dict[str, str]]:
     by_name: dict[str, dict[str, str]] = {}
     for field in fields:
@@ -187,8 +241,11 @@ def _merge_llm_and_seed(llm_payload: dict[str, Any] | None, seed: dict[str, Any]
     seed_fields = _normalize_field_entries(seed.get("normalized_fields"))
     seed_additional = _normalize_field_entries(seed.get("additional_fields"))
 
-    merged_fields = _dedupe_fields(seed_fields + llm_fields)
-    merged_additional = _dedupe_fields(seed_additional + llm_additional)
+    promoted_seed_additional, residual_seed_additional = _promote_additional_to_normalized(seed_additional)
+    promoted_llm_additional, residual_llm_additional = _promote_additional_to_normalized(llm_additional)
+
+    merged_fields = _dedupe_fields(seed_fields + llm_fields + promoted_seed_additional + promoted_llm_additional)
+    merged_additional = _dedupe_fields(residual_seed_additional + residual_llm_additional)
 
     country = str(llm_payload.get("country", "")).strip() or str(seed.get("country", "")).strip()
     jurisdiction = str(llm_payload.get("jurisdiction", "")).strip() or str(seed.get("jurisdiction", "")).strip()
