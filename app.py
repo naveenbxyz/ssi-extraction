@@ -21,11 +21,13 @@ from ssi_extraction.pdf_extractor import pages_to_prompt_payload
 from ssi_extraction.service import run_extraction_pipeline
 from ssi_extraction.sqlite_store import (
     execute_select_query,
-    get_breakdown_view,
+    get_cash_settlement_view,
     get_db_summary,
     get_latest_extraction_payload,
     get_latest_raw_pdf_payload,
     get_latest_run_metadata,
+    get_standard_ssi_view,
+    get_us_ssi_view,
     initialize_db,
     persist_extraction,
     rows_to_dicts,
@@ -48,17 +50,14 @@ def _init_session_state() -> None:
         st.session_state.latest_result = None
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
+    if "active_section" not in st.session_state:
+        st.session_state.active_section = "Latest Extraction"
 
 
 def _rows_to_df(rows: list[dict]) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
     return pd.DataFrame(rows)
-
-
-def _run_select_as_df(db_path: str, sql: str) -> pd.DataFrame:
-    rows = execute_select_query(db_path, sql)
-    return _rows_to_df(rows_to_dicts(rows))
 
 
 def _render_latest_extraction() -> None:
@@ -153,6 +152,19 @@ def _render_latest_extraction() -> None:
             st.write(f"- {note}")
 
 
+def _render_table_with_download(title: str, df: pd.DataFrame, filename: str, key_suffix: str) -> None:
+    st.markdown(f"**{title}**")
+    st.dataframe(df, use_container_width=True)
+    if not df.empty:
+        st.download_button(
+            f"Download {title} CSV",
+            data=df.to_csv(index=False),
+            file_name=filename,
+            mime="text/csv",
+            key=f"download_{key_suffix}",
+        )
+
+
 def _render_database_views(db_path: str) -> None:
     summary = get_db_summary(db_path)
 
@@ -197,90 +209,50 @@ def _render_database_views(db_path: str) -> None:
         if latest_structured is None and latest_raw is None:
             st.caption("No payloads available in database yet.")
 
-    view_name = st.selectbox(
-        "View",
-        options=[
-            "Breakdown view",
-            "Count by SSI type",
-            "Count by country",
-            "Count by currency",
-            "Raw normalized rows",
-        ],
+    search_term = st.text_input(
+        "Search across account number / account name / BIC / country / currency / details",
+        value="",
+        key="db_search_term",
     )
 
-    if view_name == "Breakdown view":
-        view_df = _rows_to_df(get_breakdown_view(db_path))
-    elif view_name == "Count by SSI type":
-        view_df = _run_select_as_df(
-            db_path,
-            """
-            SELECT ssi_type, COUNT(*) AS row_count
-            FROM ssi_records
-            GROUP BY ssi_type
-            ORDER BY row_count DESC
-            """,
-        )
-    elif view_name == "Count by country":
-        view_df = _run_select_as_df(
-            db_path,
-            """
-            SELECT COALESCE(NULLIF(country, ''), NULLIF(market, ''), 'UNKNOWN') AS country,
-                   COUNT(*) AS row_count
-            FROM ssi_records
-            GROUP BY COALESCE(NULLIF(country, ''), NULLIF(market, ''), 'UNKNOWN')
-            ORDER BY row_count DESC, country
-            """,
-        )
-    elif view_name == "Count by currency":
-        view_df = _run_select_as_df(
-            db_path,
-            """
-            SELECT COALESCE(NULLIF(currency, ''), 'N/A') AS currency,
-                   COUNT(*) AS row_count
-            FROM ssi_records
-            GROUP BY COALESCE(NULLIF(currency, ''), 'N/A')
-            ORDER BY row_count DESC, currency
-            """,
-        )
-    else:
-        view_df = _run_select_as_df(
-            db_path,
-            """
-            SELECT
-                id, ssi_type, market, country, currency, instruction_type,
-                account_number, swift_code, bic_code,
-                beneficiary_bank, beneficiary_bank_account_number,
-                additional_info, source_page, source_table, source_row
-            FROM ssi_records
-            ORDER BY id
-            LIMIT 1000
-            """,
-        )
+    standard_df = _rows_to_df(get_standard_ssi_view(db_path, search_term=search_term))
+    us_df = _rows_to_df(get_us_ssi_view(db_path, search_term=search_term))
+    cash_df = _rows_to_df(get_cash_settlement_view(db_path, search_term=search_term))
 
-    st.dataframe(view_df, use_container_width=True)
-    if not view_df.empty:
-        st.download_button(
-            "Download current view CSV",
-            data=view_df.to_csv(index=False),
-            file_name="ssi_db_view.csv",
-            mime="text/csv",
-            key="download_db_view",
-        )
-
-    st.subheader("Custom SQL (Read-Only)")
-    custom_sql = st.text_area(
-        "Run SELECT/WITH query",
-        value="SELECT * FROM ssi_records LIMIT 50",
-        height=120,
+    tab1, tab2, tab3, tab4 = st.tabs(
+        [
+            "Standard SSI Table",
+            "US SSI Variants Table",
+            "Cash Settlement Table",
+            "Custom SQL",
+        ]
     )
-    if st.button("Run custom SQL", key="run_custom_sql"):
-        try:
-            custom_rows = execute_select_query(db_path, custom_sql)
-            custom_df = _rows_to_df(rows_to_dicts(custom_rows))
-            st.success(f"Returned {len(custom_df)} rows")
-            st.dataframe(custom_df, use_container_width=True)
-        except Exception as exc:
-            st.error(f"Query failed: {exc}")
+
+    with tab1:
+        _render_table_with_download("Standard SSI", standard_df, "standard_ssi_db.csv", "standard_db")
+
+    with tab2:
+        _render_table_with_download("US SSI Variants", us_df, "us_ssi_db.csv", "us_db")
+
+    with tab3:
+        _render_table_with_download("Cash Settlement", cash_df, "cash_settlement_db.csv", "cash_db")
+
+    with tab4:
+        st.caption("Read-only SQL allowed (SELECT / WITH only)")
+        custom_sql = st.text_area(
+            "Run query",
+            value="SELECT * FROM standard_ssi LIMIT 50",
+            height=120,
+            key="custom_sql_text",
+        )
+        if st.button("Run custom SQL", key="run_custom_sql"):
+            try:
+                custom_rows = execute_select_query(db_path, custom_sql)
+                custom_df = _rows_to_df(rows_to_dicts(custom_rows))
+                st.success(f"Returned {len(custom_df)} rows")
+                st.dataframe(custom_df, use_container_width=True)
+            except Exception as exc:
+                st.error(f"Query failed: {exc}")
 
 
 def _render_chat(db_path: str, settings: LLMSettings | None) -> None:
@@ -310,7 +282,7 @@ def _render_chat(db_path: str, settings: LLMSettings | None) -> None:
         if st.button("Clear chat", key="clear_chat"):
             st.session_state.chat_history = []
 
-    st.caption("Ask questions directly on the full extraction JSON. Responses are generated by the configured LLM.")
+    st.caption("Responses are generated from full extraction JSON context, not DB rows.")
 
     for message in st.session_state.chat_history:
         with st.chat_message(message["role"]):
@@ -321,27 +293,22 @@ def _render_chat(db_path: str, settings: LLMSettings | None) -> None:
         return
 
     st.session_state.chat_history.append({"role": "user", "content": user_question})
+    with st.chat_message("user"):
+        st.write(user_question)
 
-    try:
-        st.session_state.chat_history.append(
-            {
-                "role": "assistant",
-                "content": answer_question_from_json(
+    with st.chat_message("assistant"):
+        with st.spinner("Analyzing extracted JSON..."):
+            try:
+                answer = answer_question_from_json(
                     settings=settings,
                     extraction_payload=extraction_payload,
                     question=user_question,
-                ),
-            }
-        )
-    except Exception as exc:
-        st.session_state.chat_history.append(
-            {
-                "role": "assistant",
-                "content": f"I could not answer that query: {exc}",
-            }
-        )
+                )
+            except Exception as exc:  # pragma: no cover - UI path
+                answer = f"I could not answer that query: {exc}"
+        st.write(answer)
 
-    st.rerun()
+    st.session_state.chat_history.append({"role": "assistant", "content": answer})
 
 
 st.set_page_config(page_title="SSI Extractor", layout="wide")
@@ -411,13 +378,16 @@ if uploaded and st.button("Run Extraction", type="primary"):
     logger.info("UI extraction completed stats=%s", stats)
     st.success(f"Extraction complete. Persisted {stats['rows_written']} normalized rows to SQLite.")
 
-main_tab1, main_tab2, main_tab3 = st.tabs(["Latest Extraction", "Database Views", "JSON Chat"])
+section = st.radio(
+    "Section",
+    options=["Latest Extraction", "Database Views", "JSON Chat"],
+    horizontal=True,
+    key="active_section",
+)
 
-with main_tab1:
+if section == "Latest Extraction":
     _render_latest_extraction()
-
-with main_tab2:
+elif section == "Database Views":
     _render_database_views(db_path)
-
-with main_tab3:
+else:
     _render_chat(db_path, loaded_settings)
