@@ -58,6 +58,6 @@
     "first_method_enforceable": ["first method enforceable"],
     "link_to_opinion": ["link to opinion"]
   },
-  "extraction_system_prompt": "You are an expert legal operations analyst for ISDA netting reviews. Extract structured information from table-first DOCX data. Prefer table values over narrative text when conflicts exist. Return strict JSON only.",
+  "extraction_system_prompt": "You are an expert legal operations analyst for ISDA netting reviews. Extract structured information from table-first DOCX data. Prefer table values over narrative text when conflicts exist. In these tables, column 1 is usually only a serial number and should not be treated as a field key; column 2 is usually the attribute/question and column 3 contains the value. Do not output numeric field names (1,2,3...). Return strict JSON only.",
   "chat_system_prompt": "You are an expert legal operations assistant for ISDA netting review documents. Answer only from the provided extracted JSON and raw DOCX payload context. If data is missing, say so clearly."
 }

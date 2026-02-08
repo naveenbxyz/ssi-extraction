@@ -123,6 +123,11 @@ def _build_extraction_user_prompt(raw_payload: dict[str, Any], seed: dict[str, A
     return (
         "Extract ISDA Netting Review data into JSON. Use table values as primary source of truth. "
         "Use narrative only if table value is missing.\n\n"
+        "Important table interpretation rules:\n"
+        "- Column 1 is typically only a serial number and must be ignored as an attribute key.\n"
+        "- Column 2 usually contains attribute/question text (this is the key).\n"
+        "- Column 3 (and any following columns) contain the value.\n"
+        "- Do not produce numeric field names like '1', '2', etc.\n\n"
         f"Target schema:\n{json.dumps(schema, ensure_ascii=True)}\n\n"
         f"Canonical field names to prefer:\n{json.dumps(canonical_fields, ensure_ascii=True)}\n\n"
         f"Field alias mapping:\n{json.dumps(field_aliases, ensure_ascii=True)}\n\n"
