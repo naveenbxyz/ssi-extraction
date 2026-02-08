@@ -5,11 +5,13 @@ Minimal UI application to extract securities settlement instructions from PDF fi
 ## What it does
 
 - Extracts per-page text and tables using `pdfplumber`.
-- Sends chunked payloads to a local OpenAI-compatible endpoint (`/v1/chat/completions`).
+- Sends chunked payloads to an OpenAI-compatible endpoint using the OpenAI Python SDK.
 - Normalizes results into three buckets:
   - `records` (standard market SSI rows)
   - `us_securities_settlement` (USA 2-column table variants)
   - `cash_settlement` (currency/bank details)
+- Persists normalized output into SQLite for one-time extraction and repeated querying.
+- Provides DB views and chat-style question interface over extracted SSI data.
 - Supports search and CSV/JSON download in UI.
 
 ## Run
@@ -19,12 +21,34 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Default endpoint settings:
+## SQLite workflow
 
-- Base URL: `http://localhost:8080`
-- Model: `Qwen/Qwen3-8B-Instruct`
+- DB path is configurable from sidebar (default: `data/ssi.sqlite`).
+- On upload, extraction output is written into normalized table `ssi_records`.
+- You can choose whether new upload refreshes DB (`Refresh DB when uploading a new PDF`).
+- After extraction, users can query existing DB without re-uploading PDF.
 
-You can change both from the sidebar.
+## LLM config file
+
+LLM settings are loaded from `config/llm_config.json`.
+
+Example:
+
+```json
+{
+  "base_url": "https://internal-llm/v1",
+  "api_key": "xxxxxxx",
+  "model": "internalLM",
+  "temperature": 0.0,
+  "max_tokens": 4096,
+  "request_timeout_s": 120,
+  "pages_per_chunk": 3,
+  "stream": true,
+  "verify_ssl": false
+}
+```
+
+You can point the UI to a different JSON config path from the sidebar.
 
 ## Output schema
 
@@ -40,9 +64,19 @@ You can change both from the sidebar.
 ## Notes
 
 - Designed for airgapped usage with local model serving.
-- If your endpoint does not support `response_format`, adjust `src/ssi_extraction/llm_client.py` accordingly.
+- If your endpoint does not support `response_format`, the client automatically retries without it.
 - Stage logs are printed in the Streamlit terminal output for:
   - PDF extraction start/completion and per-page table counts
-  - LLM preflight connectivity check (`/v1/models`)
-  - LLM request start/response timings for each chunk
+  - LLM preflight connectivity check (`/models`)
+  - LLM request start and completion timings for each chunk
+  - Streaming diagnostics (`events`, `first_token_s`) when `stream=true`
   - Explicit timeout and HTTP error details per chunk
+  - SQLite initialization, refresh, and persistence stats
+
+## Chat examples
+
+- `list down all the SSIs and break it down by type of SSI, country, currency, account number, swift code, beneficiary bank and BIC code, beneficiary bank account number and additional info if any`
+- `count by type`
+- `count by country`
+- `show cash settlement`
+- `list rows for AUD`

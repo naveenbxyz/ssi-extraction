@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import json
+from dataclasses import asdict, dataclass, field, fields
+from pathlib import Path
 from typing import Any
 
 
@@ -25,14 +27,38 @@ class ExtractedPage:
 
 @dataclass
 class LLMSettings:
-    """Runtime settings for local OpenAI-compatible model endpoint."""
+    """Runtime settings for OpenAI-compatible model endpoint."""
 
-    base_url: str = "http://localhost:8080"
-    model: str = "Qwen/Qwen3-8B-Instruct"
+    base_url: str = "https://internal-llm/v1"
+    api_key: str = "xxxxxxx"
+    model: str = "internalLM"
     temperature: float = 0.0
     max_tokens: int = 4096
     request_timeout_s: int = 120
     pages_per_chunk: int = 3
+    stream: bool = True
+    verify_ssl: bool = False
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "LLMSettings":
+        known_fields = {f.name for f in fields(cls)}
+        payload = {key: value for key, value in data.items() if key in known_fields}
+        return cls(**payload)
+
+    @classmethod
+    def from_json_file(cls, path: str | Path) -> "LLMSettings":
+        config_path = Path(path)
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError(f"Config file must contain a JSON object: {config_path}")
+        return cls.from_dict(raw)
+
+    def to_redacted_dict(self) -> dict[str, Any]:
+        payload = asdict(self)
+        api_key = payload.get("api_key", "")
+        if isinstance(api_key, str) and api_key:
+            payload["api_key"] = f"{api_key[:2]}***{api_key[-2:]}" if len(api_key) > 4 else "***"
+        return payload
 
 
 @dataclass

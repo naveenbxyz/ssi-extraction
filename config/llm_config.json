@@ -1,0 +1,11 @@
+{
+  "base_url": "https://internal-llm/v1",
+  "api_key": "xxxxxxx",
+  "model": "internalLM",
+  "temperature": 0.0,
+  "max_tokens": 4096,
+  "request_timeout_s": 120,
+  "pages_per_chunk": 3,
+  "stream": true,
+  "verify_ssl": false
+}

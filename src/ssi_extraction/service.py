@@ -44,12 +44,13 @@ def merge_results(chunks: list[dict]) -> CanonicalExtraction:
 def run_extraction_pipeline(pdf_path: str, settings: LLMSettings) -> tuple[list[ExtractedPage], CanonicalExtraction]:
     started = time.perf_counter()
     logger.info(
-        "Pipeline started pdf_path=%s model=%s base_url=%s pages_per_chunk=%d timeout_s=%d",
+        "Pipeline started pdf_path=%s model=%s base_url=%s pages_per_chunk=%d timeout_s=%d stream=%s",
         pdf_path,
         settings.model,
         settings.base_url,
         settings.pages_per_chunk,
         settings.request_timeout_s,
+        settings.stream,
     )
     pages = extract_pdf_payload(pdf_path)
     total_tables = sum(len(page.tables) for page in pages)
@@ -65,29 +66,32 @@ def run_extraction_pipeline(pdf_path: str, settings: LLMSettings) -> tuple[list[
     )
 
     client = LocalOpenAICompatibleClient(settings)
-    client.log_connectivity()
+    try:
+        client.log_connectivity()
 
-    results: list[dict] = []
-    total_chunks = len(payload_chunks)
-    for idx, payload in enumerate(payload_chunks, start=1):
-        page_numbers = [int(page.get("page_number", -1)) for page in payload]
-        logger.info(
-            "Pipeline stage=llm_chunk_start chunk=%d/%d pages=%s",
-            idx,
-            total_chunks,
-            page_numbers,
-        )
-        chunk_result = client.extract_chunk(payload, chunk_index=idx, total_chunks=total_chunks)
-        logger.info(
-            "Pipeline stage=llm_chunk_done chunk=%d/%d records=%d us_rows=%d cash_rows=%d notes=%d",
-            idx,
-            total_chunks,
-            len(chunk_result.get("records", [])),
-            len(chunk_result.get("us_securities_settlement", [])),
-            len(chunk_result.get("cash_settlement", [])),
-            len(chunk_result.get("notes", [])),
-        )
-        results.append(chunk_result)
+        results: list[dict] = []
+        total_chunks = len(payload_chunks)
+        for idx, payload in enumerate(payload_chunks, start=1):
+            page_numbers = [int(page.get("page_number", -1)) for page in payload]
+            logger.info(
+                "Pipeline stage=llm_chunk_start chunk=%d/%d pages=%s",
+                idx,
+                total_chunks,
+                page_numbers,
+            )
+            chunk_result = client.extract_chunk(payload, chunk_index=idx, total_chunks=total_chunks)
+            logger.info(
+                "Pipeline stage=llm_chunk_done chunk=%d/%d records=%d us_rows=%d cash_rows=%d notes=%d",
+                idx,
+                total_chunks,
+                len(chunk_result.get("records", [])),
+                len(chunk_result.get("us_securities_settlement", [])),
+                len(chunk_result.get("cash_settlement", [])),
+                len(chunk_result.get("notes", [])),
+            )
+            results.append(chunk_result)
+    finally:
+        client.close()
 
     merged = merge_results(results)
     elapsed_s = time.perf_counter() - started
