@@ -65,6 +65,7 @@ You can point the UI to a different JSON config path from the sidebar.
 
 - Designed for airgapped usage with local model serving.
 - If your endpoint does not support `response_format`, the client automatically retries without it.
+- If model output contains partially malformed JSON, the parser salvages valid records and logs parse warnings instead of aborting the entire run.
 - Stage logs are printed in the Streamlit terminal output for:
   - PDF extraction start/completion and per-page table counts
   - LLM preflight connectivity check (`/models`)

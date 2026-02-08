@@ -20,7 +20,7 @@ except Exception:  # pragma: no cover - import compatibility
     openai_legacy = None
 
 from .models import LLMSettings
-from .parser import extract_json_object, normalize_chunk_result
+from .parser import parse_chunk_result_with_recovery
 from .prompts import SYSTEM_PROMPT, build_user_prompt
 
 logger = logging.getLogger(__name__)
@@ -358,20 +358,20 @@ class LocalOpenAICompatibleClient:
                     f"(pages={page_numbers}): {exc}"
                 ) from exc
 
-        try:
-            parsed = extract_json_object(content)
-        except Exception as exc:
-            logger.error(
-                "LLM parse error chunk=%d/%d content_preview=%s",
+        normalized, warnings = parse_chunk_result_with_recovery(content)
+        if warnings:
+            preview = " | ".join(warnings[:5])
+            logger.warning(
+                "LLM parse recovered chunk=%d/%d warning_count=%d warnings=%s content_preview=%s",
                 chunk_index,
                 total_chunks,
+                len(warnings),
+                preview,
                 str(content)[:500],
             )
-            raise RuntimeError(
-                f"LLM returned non-JSON content for chunk {chunk_index}/{total_chunks}"
-            ) from exc
-
-        normalized = normalize_chunk_result(parsed)
+            normalized["notes"].extend(
+                [f"chunk {chunk_index}/{total_chunks} parse warning: {warning}" for warning in warnings]
+            )
         logger.info(
             "LLM parse success chunk=%d/%d records=%d us_rows=%d cash_rows=%d",
             chunk_index,
