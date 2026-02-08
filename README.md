@@ -41,3 +41,8 @@ You can change both from the sidebar.
 
 - Designed for airgapped usage with local model serving.
 - If your endpoint does not support `response_format`, adjust `src/ssi_extraction/llm_client.py` accordingly.
+- Stage logs are printed in the Streamlit terminal output for:
+  - PDF extraction start/completion and per-page table counts
+  - LLM preflight connectivity check (`/v1/models`)
+  - LLM request start/response timings for each chunk
+  - Explicit timeout and HTTP error details per chunk

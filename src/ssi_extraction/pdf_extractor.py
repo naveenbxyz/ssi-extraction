@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
+import time
 from pathlib import Path
 
 import pdfplumber
 
 from .models import ExtractedPage, ExtractedTable
+
+logger = logging.getLogger(__name__)
 
 
 def _clean_cell(value: object) -> str:
@@ -36,18 +40,23 @@ def _rows_from_table(table: list[list[object]], has_header: bool) -> list[list[s
 
 def extract_pdf_payload(pdf_path: str | Path) -> list[ExtractedPage]:
     """Extract page text and tables from the full PDF."""
+    logger.info("PDF extraction started path=%s", pdf_path)
+    started = time.perf_counter()
     pages: list[ExtractedPage] = []
     with pdfplumber.open(str(pdf_path)) as pdf:
+        logger.info("PDF opened successfully total_pages=%d", len(pdf.pages))
         for idx, page in enumerate(pdf.pages, start=1):
             text = page.extract_text() or ""
             raw_tables = page.extract_tables() or []
             extracted_tables: list[ExtractedTable] = []
+            total_rows = 0
             for t_idx, table in enumerate(raw_tables, start=1):
                 if not table:
                     continue
                 header = _header_from_table(table)
                 has_header = bool(table and header == [_clean_cell(c) for c in table[0]])
                 rows = _rows_from_table(table, has_header=has_header)
+                total_rows += len(rows)
                 extracted_tables.append(
                     ExtractedTable(
                         page_number=idx,
@@ -63,6 +72,15 @@ def extract_pdf_payload(pdf_path: str | Path) -> list[ExtractedPage]:
                     tables=extracted_tables,
                 )
             )
+            logger.info(
+                "PDF page extracted page=%d text_chars=%d tables=%d table_rows=%d",
+                idx,
+                len(text),
+                len(extracted_tables),
+                total_rows,
+            )
+    elapsed_s = time.perf_counter() - started
+    logger.info("PDF extraction completed pages=%d elapsed_s=%.2f", len(pages), elapsed_s)
     return pages
 
 

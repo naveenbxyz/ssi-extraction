@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import tempfile
 from pathlib import Path
 
@@ -17,10 +18,19 @@ if str(SRC) not in sys.path:
 from ssi_extraction.models import LLMSettings
 from ssi_extraction.service import run_extraction_pipeline
 
+LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+root_logger = logging.getLogger()
+if not root_logger.handlers:
+    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+else:
+    root_logger.setLevel(logging.INFO)
+
+logger = logging.getLogger(__name__)
 
 st.set_page_config(page_title="SSI Extractor", layout="wide")
 st.title("Securities Settlement Instructions Extractor")
 st.caption("Upload SSI PDF, extract tables with pdfplumber, normalize using local Qwen endpoint.")
+st.caption("Runtime stage logs are emitted to the Streamlit terminal output.")
 
 with st.sidebar:
     st.subheader("Model Settings")
@@ -36,10 +46,12 @@ uploaded = st.file_uploader("Upload SSI PDF", type=["pdf"])
 
 if uploaded:
     if st.button("Run Extraction", type="primary"):
+        logger.info("UI run started filename=%s size_bytes=%d", uploaded.name, uploaded.size)
         with st.spinner("Extracting tables and calling local model..."):
             with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp:
                 temp.write(uploaded.read())
                 temp_path = temp.name
+            logger.info("Uploaded PDF buffered to temp_path=%s", temp_path)
 
             settings = LLMSettings(
                 base_url=base_url,
@@ -54,8 +66,17 @@ if uploaded:
                 pages, result = run_extraction_pipeline(temp_path, settings)
             except Exception as exc:  # pragma: no cover - UI path
                 st.error(f"Extraction failed: {exc}")
+                logger.exception("UI run failed temp_path=%s", temp_path)
                 st.stop()
 
+        logger.info(
+            "UI run completed filename=%s pages=%d records=%d us_rows=%d cash_rows=%d",
+            uploaded.name,
+            len(pages),
+            len(result.records),
+            len(result.us_securities_settlement),
+            len(result.cash_settlement),
+        )
         st.success("Extraction complete")
 
         st.subheader("Summary")
