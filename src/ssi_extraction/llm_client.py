@@ -381,3 +381,41 @@ class LocalOpenAICompatibleClient:
             len(normalized["cash_settlement"]),
         )
         return normalized
+
+    def ask_text(self, system_prompt: str, user_prompt: str, task_label: str = "chat") -> str:
+        logger.info(
+            "LLM %s request started endpoint=%s timeout_s=%d model=%s stream=%s",
+            task_label,
+            self.chat_endpoint,
+            self.settings.request_timeout_s,
+            self.settings.model,
+            self.settings.stream,
+        )
+        body = {
+            "model": self.settings.model,
+            "temperature": self.settings.temperature,
+            "max_tokens": self.settings.max_tokens,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        try:
+            content = self._request_completion_text(
+                body=body,
+                chunk_index=1,
+                total_chunks=1,
+                page_numbers=[-1],
+                fallback=False,
+            )
+        except Exception as exc:
+            if self._is_timeout_error(exc):
+                logger.error("LLM %s timeout error=%s", task_label, exc)
+                raise TimeoutError(
+                    f"LLM {task_label} timed out after {self.settings.request_timeout_s}s"
+                ) from exc
+            logger.exception("LLM %s failed", task_label)
+            raise RuntimeError(f"LLM {task_label} failed: {exc}") from exc
+
+        logger.info("LLM %s completed response_chars=%d", task_label, len(content))
+        return content

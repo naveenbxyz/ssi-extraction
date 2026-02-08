@@ -11,7 +11,7 @@ Minimal UI application to extract securities settlement instructions from PDF fi
   - `us_securities_settlement` (USA 2-column table variants)
   - `cash_settlement` (currency/bank details)
 - Persists normalized output into SQLite for one-time extraction and repeated querying.
-- Provides DB views and chat-style question interface over extracted SSI data.
+- Provides DB views and a chat interface powered by the full extraction JSON context.
 - Supports search and CSV/JSON download in UI.
 
 ## Run
@@ -25,8 +25,13 @@ streamlit run app.py
 
 - DB path is configurable from sidebar (default: `data/ssi.sqlite`).
 - On upload, extraction output is written into normalized table `ssi_records`.
+- The run metadata table stores both:
+  - `extracted_json` (LLM-structured output)
+  - `raw_pdf_payload` (raw `pdfplumber` page/table payload sent to LLM)
 - You can choose whether new upload refreshes DB (`Refresh DB when uploading a new PDF`).
 - After extraction, users can query existing DB without re-uploading PDF.
+- Chat uses full extraction JSON (latest in-memory run, or latest persisted run payload from SQLite).
+- Database Views includes a latest-run cross-check section with download buttons for both payloads.
 
 ## LLM config file
 

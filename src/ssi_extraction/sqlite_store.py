@@ -207,6 +207,11 @@ def _connect(db_path: str | Path) -> sqlite3.Connection:
     return conn
 
 
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(row[1] == column for row in rows)
+
+
 def initialize_db(db_path: str | Path) -> None:
     logger.info("SQLite initialize started db_path=%s", db_path)
     with _connect(db_path) as conn:
@@ -221,10 +226,16 @@ def initialize_db(db_path: str | Path) -> None:
                 standard_count INTEGER NOT NULL,
                 us_count INTEGER NOT NULL,
                 cash_count INTEGER NOT NULL,
-                notes_count INTEGER NOT NULL
+                notes_count INTEGER NOT NULL,
+                extracted_json TEXT NOT NULL DEFAULT '{}',
+                raw_pdf_payload TEXT NOT NULL DEFAULT '[]'
             )
             """
         )
+        if not _column_exists(conn, "extraction_runs", "extracted_json"):
+            conn.execute("ALTER TABLE extraction_runs ADD COLUMN extracted_json TEXT NOT NULL DEFAULT '{}'")
+        if not _column_exists(conn, "extraction_runs", "raw_pdf_payload"):
+            conn.execute("ALTER TABLE extraction_runs ADD COLUMN raw_pdf_payload TEXT NOT NULL DEFAULT '[]'")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS ssi_records (
@@ -273,6 +284,7 @@ def persist_extraction(
     source_file: str,
     result: CanonicalExtraction,
     page_count: int,
+    raw_pdf_payload: list[dict[str, Any]] | None = None,
     replace_existing: bool = True,
 ) -> dict[str, int]:
     initialize_db(db_path)
@@ -286,8 +298,8 @@ def persist_extraction(
             """
             INSERT INTO extraction_runs(
                 source_file, extracted_at, page_count,
-                standard_count, us_count, cash_count, notes_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                standard_count, us_count, cash_count, notes_count, extracted_json, raw_pdf_payload
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 source_file,
@@ -297,6 +309,8 @@ def persist_extraction(
                 len(result.us_securities_settlement),
                 len(result.cash_settlement),
                 len(result.notes),
+                json.dumps(result.to_dict(), ensure_ascii=True),
+                json.dumps(raw_pdf_payload or [], ensure_ascii=True),
             ),
         )
         run_id = int(inserted.lastrowid)
@@ -398,3 +412,79 @@ def get_breakdown_view(db_path: str | Path) -> list[dict[str, Any]]:
         """,
     )
     return rows_to_dicts(rows)
+
+
+def get_latest_extraction_payload(db_path: str | Path) -> dict[str, Any] | None:
+    initialize_db(db_path)
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT extracted_json
+            FROM extraction_runs
+            ORDER BY run_id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    payload = row["extracted_json"]
+    if not payload:
+        return None
+
+    try:
+        parsed = json.loads(payload)
+    except json.JSONDecodeError:
+        logger.warning("Stored extracted_json is malformed in latest run")
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
+
+
+def get_latest_raw_pdf_payload(db_path: str | Path) -> list[dict[str, Any]] | None:
+    initialize_db(db_path)
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT raw_pdf_payload
+            FROM extraction_runs
+            ORDER BY run_id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    payload = row["raw_pdf_payload"]
+    if not payload:
+        return None
+
+    try:
+        parsed = json.loads(payload)
+    except json.JSONDecodeError:
+        logger.warning("Stored raw_pdf_payload is malformed in latest run")
+        return None
+    if not isinstance(parsed, list):
+        return None
+    return parsed
+
+
+def get_latest_run_metadata(db_path: str | Path) -> dict[str, Any] | None:
+    initialize_db(db_path)
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT run_id, source_file, extracted_at, page_count,
+                   standard_count, us_count, cash_count, notes_count
+            FROM extraction_runs
+            ORDER BY run_id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    if row is None:
+        return None
+    return dict(row)
