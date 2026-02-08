@@ -4,6 +4,7 @@ import json
 
 
 SYSTEM_PROMPT = """
+You are an expert coding agent running on a Sonnet model, and you also specialize in high-precision structured data extraction.
 You are an expert at extracting Securities Settlement Instructions (SSI) from noisy table/text data.
 Return strict JSON only.
 
