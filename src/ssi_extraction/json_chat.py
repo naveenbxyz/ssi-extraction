@@ -29,14 +29,16 @@ def answer_question_from_json(
     settings: LLMSettings,
     extraction_payload: dict[str, Any],
     question: str,
+    system_prompt: str | None = None,
+    task_label: str = "json_chat",
 ) -> str:
     client = LocalOpenAICompatibleClient(settings)
     try:
         client.log_connectivity()
         return client.ask_text(
-            system_prompt=JSON_CHAT_SYSTEM_PROMPT,
+            system_prompt=system_prompt or JSON_CHAT_SYSTEM_PROMPT,
             user_prompt=_build_user_prompt(question=question, extraction_payload=extraction_payload),
-            task_label="json_chat",
+            task_label=task_label,
         )
     finally:
         client.close()
