@@ -99,6 +99,32 @@ DEFAULT_FIELD_ALIASES = {
     "link_to_opinion": ["link to opinion"],
 }
 
+DEFAULT_QUESTION_NUMBER_FIELD_MAP = {
+    "1": "jurisdiction",
+    "2": "overview",
+    "3": "reviewer_name",
+    "4": "date_of_review",
+    "5": "author_of_opinion",
+    "6": "date_of_main_opinion_and_update_opinion",
+    "7": "counterparty_types_included",
+    "8": "counterparty_types_excluded",
+    "9": "transaction_types_included",
+    "10": "automatic_early_termination_applicable",
+    "11": "early_termination_enforceable",
+    "12": "closeout_netting_enforceable",
+    "13": "netting_legislation_exists",
+    "14": "closeout_netting_affected_by_non_legislative_transactions",
+    "15": "closeout_netting_enforceable_with_non_netting_branches",
+    "16": "closeout_netting_enforceable_against_local_branch_of_foreign_bank",
+    "17": "closeout_amount_proof_without_local_currency_conversion",
+    "18": "recommended_amendments_to_standard_documents",
+    "19": "client_types_same_as_netting_and_collateral_opinions",
+    "20": "transaction_types_same_as_netting_and_collateral_opinions",
+    "21": "netting_opinion_applies_with_addendum_on_client_default",
+    "22": "collateral_opinion_applies_with_transfer_annex_or_ny_annex",
+    "23": "limited_recourse_provisions_enforceable",
+}
+
 
 DEFAULT_EXTRACTION_SYSTEM_PROMPT = (
     "You are an expert legal operations analyst for ISDA netting reviews. "
@@ -117,6 +143,7 @@ DEFAULT_CHAT_SYSTEM_PROMPT = (
 DEFAULT_CONFIG = {
     "canonical_fields": DEFAULT_CANONICAL_FIELDS,
     "field_aliases": DEFAULT_FIELD_ALIASES,
+    "question_number_field_map": DEFAULT_QUESTION_NUMBER_FIELD_MAP,
     "extraction_system_prompt": DEFAULT_EXTRACTION_SYSTEM_PROMPT,
     "chat_system_prompt": DEFAULT_CHAT_SYSTEM_PROMPT,
 }
@@ -141,5 +168,9 @@ def load_isda_config(config_path: str | Path) -> dict[str, Any]:
     aliases = merged.get("field_aliases")
     if not isinstance(aliases, dict):
         raise ValueError("ISDA config field_aliases must be an object")
+
+    question_map = merged.get("question_number_field_map")
+    if not isinstance(question_map, dict):
+        raise ValueError("ISDA config question_number_field_map must be an object")
 
     return merged

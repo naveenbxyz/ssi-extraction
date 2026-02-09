@@ -25,37 +25,70 @@ def _is_serial_number(text: str) -> bool:
     return re.fullmatch(r"\d+[.)]?", token) is not None
 
 
-def _row_to_key_value(cells: list[str]) -> tuple[str, str] | None:
+def _parse_serial_number(text: str) -> int | None:
+    token = text.strip()
+    if not token:
+        return None
+    match = re.match(r"^\s*(\d+)\s*[.)]?\s*$", token)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return None
+
+
+def _extract_question_number(serial_cell: str, key_cell: str) -> int | None:
+    serial_num = _parse_serial_number(serial_cell)
+    if serial_num is not None:
+        return serial_num
+
+    key_match = re.match(r"^\s*(\d+)\s*[.)-]\s*", key_cell or "")
+    if key_match:
+        try:
+            return int(key_match.group(1))
+        except ValueError:
+            return None
+    return None
+
+
+def _strip_question_number_prefix(key: str) -> str:
+    return re.sub(r"^\s*\d+\s*[.)-]\s*", "", key).strip()
+
+
+def _row_to_key_value(cells: list[str]) -> tuple[str, str, int | None] | None:
     if not any(cells):
         return None
 
     # ISDA table convention (primary): col1 = serial number, col2 = attribute/question, col3+ = value.
     if len(cells) >= 3 and _is_serial_number(cells[0]):
-        key = _normalize_attribute_key(cells[1])
+        key = _strip_question_number_prefix(_normalize_attribute_key(cells[1]))
         value = " | ".join([c.strip() for c in cells[2:] if c.strip()]).strip()
         if value:
-            return key, value
+            return key, value, _extract_question_number(cells[0], cells[1])
 
     # Some documents may have blank first cell with key/value shifted right.
     if len(cells) >= 3 and not cells[0].strip() and cells[1].strip():
-        key = _normalize_attribute_key(cells[1])
+        key = _strip_question_number_prefix(_normalize_attribute_key(cells[1]))
         value = " | ".join([c.strip() for c in cells[2:] if c.strip()]).strip()
         if value:
-            return key, value
+            return key, value, _extract_question_number(cells[0], cells[1])
 
     populated = [c for c in cells if c]
     if len(populated) >= 2 and populated[0]:
-        key = _normalize_attribute_key(populated[0])
+        key = _strip_question_number_prefix(_normalize_attribute_key(populated[0]))
         value = " | ".join(populated[1:]).strip()
         if value:
-            return key, value
+            question_number = _extract_question_number(cells[0] if cells else "", populated[0])
+            return key, value, question_number
 
     if len(populated) == 1 and ":" in populated[0]:
         left, right = populated[0].split(":", 1)
         key = _clean(left)
         value = _clean(right)
         if key and value:
-            return key, value
+            question_number = _extract_question_number(cells[0] if cells else "", left)
+            return key, value, question_number
 
     return None
 
@@ -92,6 +125,7 @@ def extract_docx_payload(docx_path: str | Path) -> dict:
                     {
                         "table_index": t_idx,
                         "row_index": r_idx,
+                        "question_number": kv[2],
                         "key": kv[0],
                         "value": kv[1],
                     }

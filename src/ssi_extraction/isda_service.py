@@ -55,6 +55,16 @@ def _match_canonical_field(key: str, alias_index: dict[str, str]) -> str | None:
 def _rule_based_seed(payload: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     field_aliases = config.get("field_aliases", {})
     alias_index = _build_alias_index(field_aliases)
+    question_number_map_raw = config.get("question_number_field_map", {})
+    question_number_map: dict[int, str] = {}
+    if isinstance(question_number_map_raw, dict):
+        for key, value in question_number_map_raw.items():
+            try:
+                question_number = int(str(key).strip())
+            except ValueError:
+                continue
+            if isinstance(value, str) and value.strip():
+                question_number_map[question_number] = value.strip()
 
     merged_values: dict[str, dict[str, str]] = {}
     additional_fields: list[dict[str, str]] = []
@@ -62,20 +72,28 @@ def _rule_based_seed(payload: dict[str, Any], config: dict[str, Any]) -> dict[st
     for item in payload.get("key_value_candidates", []):
         key = str(item.get("key", "")).strip()
         value = str(item.get("value", "")).strip()
+        question_number_raw = item.get("question_number")
+        question_number = question_number_raw if isinstance(question_number_raw, int) else None
         if not key or not value:
             continue
 
-        canonical = _match_canonical_field(key, alias_index)
+        canonical = question_number_map.get(question_number) if question_number is not None else None
+        if canonical is None:
+            canonical = _match_canonical_field(key, alias_index)
+
         if canonical:
             existing = merged_values.get(canonical)
             if existing and value not in existing["value"]:
                 existing["value"] = f"{existing['value']} ; {value}"
             elif not existing:
+                source_note = f"Derived from table key: {key}"
+                if question_number is not None:
+                    source_note = f"Derived from question {question_number}: {key}"
                 merged_values[canonical] = {
                     "field_name": canonical,
                     "value": value,
                     "source": "table",
-                    "notes": f"Derived from table key: {key}",
+                    "notes": source_note,
                 }
         else:
             inferred = _infer_field_name(key)
@@ -84,11 +102,14 @@ def _rule_based_seed(payload: dict[str, Any], config: dict[str, Any]) -> dict[st
                 if existing and value not in existing["value"]:
                     existing["value"] = f"{existing['value']} ; {value}"
                 elif not existing:
+                    note = f"Inferred field name from table key: {key}"
+                    if question_number is not None:
+                        note = f"Inferred from question {question_number}: {key}"
                     merged_values[inferred] = {
                         "field_name": inferred,
                         "value": value,
                         "source": "table",
-                        "notes": f"Inferred field name from table key: {key}",
+                        "notes": note,
                     }
             else:
                 additional_fields.append(
@@ -146,6 +167,7 @@ def _build_extraction_user_prompt(raw_payload: dict[str, Any], seed: dict[str, A
 
     canonical_fields = config.get("canonical_fields", [])
     field_aliases = config.get("field_aliases", {})
+    question_number_map = config.get("question_number_field_map", {})
 
     return (
         "Extract ISDA Netting Review data into JSON. Use table values as primary source of truth. "
@@ -162,6 +184,7 @@ def _build_extraction_user_prompt(raw_payload: dict[str, Any], seed: dict[str, A
         "Only use additional_fields for truly miscellaneous content that cannot be represented as a field.\n\n"
         f"Canonical field names to prefer:\n{json.dumps(canonical_fields, ensure_ascii=True)}\n\n"
         f"Field alias mapping:\n{json.dumps(field_aliases, ensure_ascii=True)}\n\n"
+        f"Question number mapping (if available):\n{json.dumps(question_number_map, ensure_ascii=True)}\n\n"
         f"Rule-based seed:\n{json.dumps(seed, ensure_ascii=True)}\n\n"
         f"DOCX raw payload:\n{json.dumps(raw_payload, ensure_ascii=True)}"
     )
@@ -311,6 +334,9 @@ def run_isda_extraction_pipeline(
         for field in merged.get("normalized_fields", []):
             if field.get("field_name") == "jurisdiction" and field.get("value"):
                 merged["jurisdiction"] = field["value"]
+
+    if not merged.get("country") and merged.get("jurisdiction"):
+        merged["country"] = str(merged["jurisdiction"])
 
     logger.info(
         "ISDA extraction pipeline completed country=%s jurisdiction=%s field_count=%d additional_field_count=%d",

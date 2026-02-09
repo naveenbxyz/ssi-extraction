@@ -2,61 +2,116 @@
   "canonical_fields": [
     "country",
     "jurisdiction",
-    "netting",
-    "date_of_opinion_review",
-    "next_review_date",
+    "overview",
     "reviewer_name",
+    "author_of_opinion",
+    "date_of_review",
+    "date_of_main_opinion_and_update_opinion",
     "counterparty_types_included",
-    "counterparty_type_notes_qualification",
-    "counterparty_type_comment",
-    "top_up_opinion_date",
-    "top_up_opinion_date_comments",
-    "additional_covered_counterparties_top_up_opinion",
-    "additional_covered_products_top_up_opinion",
     "counterparty_types_excluded",
     "transaction_types_included",
     "transaction_types_excluded",
-    "governing_law_of_agreement_covered_by_opinion",
     "automatic_early_termination_applicable",
     "early_termination_enforceable",
-    "early_termination_notes",
     "closeout_netting_enforceable",
-    "closeout_netting_margin_rules_exemptions_if_not_enforceable",
-    "closeout_netting_notes",
     "netting_legislation_exists",
-    "excluded_transaction_types_allowed",
-    "second_method_assumed",
-    "first_method_enforceable",
-    "inclusion_of_branch_in_non_netting_country_allowed",
-    "multibranch_local_branch",
-    "foreign_currency_termination_amount_allowed",
-    "termination_amount_currency_if_not_allowed",
-    "amendment_recommended_counterparty_type",
-    "amendment_notes_for_counterparty_type",
+    "closeout_netting_affected_by_non_legislative_transactions",
+    "closeout_netting_enforceable_with_non_netting_branches",
+    "closeout_netting_enforceable_against_local_branch_of_foreign_bank",
+    "closeout_amount_proof_without_local_currency_conversion",
+    "recommended_amendments_to_standard_documents",
+    "client_types_same_as_netting_and_collateral_opinions",
+    "transaction_types_same_as_netting_and_collateral_opinions",
+    "netting_opinion_applies_with_addendum_on_client_default",
+    "collateral_opinion_applies_with_transfer_annex_or_ny_annex",
+    "limited_recourse_provisions_enforceable",
+    "governing_law_of_agreement_covered_by_opinion",
+    "next_review_date",
+    "top_up_opinion_date",
+    "top_up_opinion_date_comments",
     "link_to_opinion"
   ],
   "field_aliases": {
     "country": ["country", "country/market", "market"],
     "jurisdiction": ["jurisdiction"],
-    "netting": ["netting", "netting enforceable"],
-    "date_of_opinion_review": ["date of opinion review", "opinion review date"],
-    "next_review_date": ["next review date"],
-    "reviewer_name": ["reviewer", "reviewer name"],
-    "counterparty_types_included": ["counterparty types included"],
-    "counterparty_types_excluded": ["counterparty types excluded"],
-    "transaction_types_included": ["transaction types included"],
-    "transaction_types_excluded": ["transaction types excluded"],
-    "governing_law_of_agreement_covered_by_opinion": ["governing law", "governing law of agreement"],
+    "overview": ["overview"],
+    "reviewer_name": ["reviewer", "reviewer name", "name of reviewer"],
+    "author_of_opinion": ["author of opinion"],
+    "date_of_review": ["date of review", "date of opinion review", "opinion review date"],
+    "date_of_main_opinion_and_update_opinion": [
+      "date of main opinion and update opinion",
+      "date of main opinion and update opinion/supplemental opinion"
+    ],
+    "counterparty_types_included": [
+      "what types of counterparty are covered by the opinion",
+      "counterparty types included"
+    ],
+    "counterparty_types_excluded": [
+      "what types of counterparty are not covered",
+      "counterparty types excluded"
+    ],
+    "transaction_types_included": [
+      "what types of transaction are eligible for close-out netting",
+      "transaction types included"
+    ],
     "automatic_early_termination_applicable": ["automatic early termination applicable"],
     "early_termination_enforceable": ["early termination enforceable"],
-    "early_termination_notes": ["early termination notes"],
     "closeout_netting_enforceable": ["closeout netting enforceable", "close-out netting enforceable"],
-    "closeout_netting_notes": ["closeout netting notes", "close-out netting notes"],
-    "netting_legislation_exists": ["netting legislation exists"],
-    "excluded_transaction_types_allowed": ["excluded transaction types allowed"],
-    "second_method_assumed": ["second method assumed"],
-    "first_method_enforceable": ["first method enforceable"],
+    "netting_legislation_exists": ["relevant netting legislation"],
+    "closeout_netting_affected_by_non_legislative_transactions": [
+      "close-out netting under the agreement is not affected if transactions not covered"
+    ],
+    "closeout_netting_enforceable_with_non_netting_branches": [
+      "inclusion of branches in non-netting jurisdiction"
+    ],
+    "closeout_netting_enforceable_against_local_branch_of_foreign_bank": [
+      "enforceable against a local branch of a foreign bank"
+    ],
+    "closeout_amount_proof_without_local_currency_conversion": [
+      "claim for the close-out amount be proved in insolvency proceedings without conversion"
+    ],
+    "recommended_amendments_to_standard_documents": [
+      "recommended amendments to the standard documents"
+    ],
+    "client_types_same_as_netting_and_collateral_opinions": [
+      "types of client covered by the opinion the same"
+    ],
+    "transaction_types_same_as_netting_and_collateral_opinions": [
+      "types of transaction covered by the opinion the same"
+    ],
+    "netting_opinion_applies_with_addendum_on_client_default": [
+      "conclusions reached in the netting opinion apply where the agreement is used with the addendum"
+    ],
+    "collateral_opinion_applies_with_transfer_annex_or_ny_annex": [
+      "collateral opinion apply where a transfer annex or ny annex is used"
+    ],
+    "limited_recourse_provisions_enforceable": ["limited recourse provisions of the addendum enforceable"],
     "link_to_opinion": ["link to opinion"]
+  },
+  "question_number_field_map": {
+    "1": "jurisdiction",
+    "2": "overview",
+    "3": "reviewer_name",
+    "4": "date_of_review",
+    "5": "author_of_opinion",
+    "6": "date_of_main_opinion_and_update_opinion",
+    "7": "counterparty_types_included",
+    "8": "counterparty_types_excluded",
+    "9": "transaction_types_included",
+    "10": "automatic_early_termination_applicable",
+    "11": "early_termination_enforceable",
+    "12": "closeout_netting_enforceable",
+    "13": "netting_legislation_exists",
+    "14": "closeout_netting_affected_by_non_legislative_transactions",
+    "15": "closeout_netting_enforceable_with_non_netting_branches",
+    "16": "closeout_netting_enforceable_against_local_branch_of_foreign_bank",
+    "17": "closeout_amount_proof_without_local_currency_conversion",
+    "18": "recommended_amendments_to_standard_documents",
+    "19": "client_types_same_as_netting_and_collateral_opinions",
+    "20": "transaction_types_same_as_netting_and_collateral_opinions",
+    "21": "netting_opinion_applies_with_addendum_on_client_default",
+    "22": "collateral_opinion_applies_with_transfer_annex_or_ny_annex",
+    "23": "limited_recourse_provisions_enforceable"
   },
   "extraction_system_prompt": "You are an expert legal operations analyst for ISDA netting reviews. Extract structured information from table-first DOCX data. Prefer table values over narrative text when conflicts exist. In these tables, column 1 is usually only a serial number and should not be treated as a field key; column 2 is usually the attribute/question and column 3 contains the value. Canonical fields are guidance, not a strict whitelist: if a field does not map cleanly, infer a meaningful snake_case field name and keep it in normalized_fields. Do not output numeric field names (1,2,3...). Return strict JSON only.",
   "chat_system_prompt": "You are an expert legal operations assistant for ISDA netting review documents. Answer only from the provided extracted JSON and raw DOCX payload context. If data is missing, say so clearly."
