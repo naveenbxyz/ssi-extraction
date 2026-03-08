@@ -83,6 +83,8 @@ npm run dev
 python3 app.py
 ```
 
+Note: the backend now clears the default SQLite files on startup, so restarting the service resets `data/ssi.sqlite` and `data/isda_netting.sqlite`.
+
 ### Frontend only
 
 ```bash

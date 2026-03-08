@@ -60,6 +60,17 @@ DEFAULT_SSI_DB = "data/ssi.sqlite"
 DEFAULT_ISDA_DB = "data/isda_netting.sqlite"
 
 
+def _reset_sqlite_db(db_path: Path) -> None:
+    for candidate in (
+        db_path,
+        db_path.with_name(f"{db_path.name}-wal"),
+        db_path.with_name(f"{db_path.name}-shm"),
+    ):
+        if candidate.exists():
+            candidate.unlink()
+            logger.info("Removed SQLite file on startup path=%s", candidate)
+
+
 class SqlRequest(BaseModel):
     db_path: str
     query: str
@@ -150,8 +161,12 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup() -> None:
-    initialize_db(str(_resolve_path(DEFAULT_SSI_DB)))
-    initialize_isda_db(str(_resolve_path(DEFAULT_ISDA_DB)))
+    resolved_ssi_db = _resolve_path(DEFAULT_SSI_DB)
+    resolved_isda_db = _resolve_path(DEFAULT_ISDA_DB)
+    _reset_sqlite_db(resolved_ssi_db)
+    _reset_sqlite_db(resolved_isda_db)
+    initialize_db(str(resolved_ssi_db))
+    initialize_isda_db(str(resolved_isda_db))
 
 
 @app.get("/api/health")
