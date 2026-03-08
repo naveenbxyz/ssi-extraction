@@ -167,6 +167,11 @@ The large 201-field catalog is treated as an external JSON artifact rather than 
 
 The current design expects the backend to load that file from disk and feed it into extraction-time matching.
 
+The current precedence is:
+
+1. field catalog
+2. canonical fields / aliases / question-number mappings as fallback
+
 ### Why read-only SQL remains in the product
 
 The SQL panels are useful for:

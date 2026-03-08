@@ -137,28 +137,35 @@ def _rule_based_seed(payload: dict[str, Any], config: dict[str, Any]) -> dict[st
             continue
 
         catalog_entry = _match_field_catalog_entry(key, field_catalog_index)
-        canonical = question_number_map.get(question_number) if question_number is not None else None
-        if canonical is None:
-            canonical = _match_canonical_field(key, alias_index)
-        if canonical is None and catalog_entry is not None:
-            canonical = _infer_field_name(str(catalog_entry.get("attributeName", "")))
+        field_name = ""
+        source_note = f"Derived from table key: {key}"
+        if question_number is not None:
+            source_note = f"Derived from question {question_number}: {key}"
 
-        if canonical:
-            existing = merged_values.get(canonical)
+        # Primary matching source: field catalog. Legacy canonical fields,
+        # aliases, and question-number mappings are fallbacks only.
+        if catalog_entry is not None:
+            field_name = _infer_field_name(str(catalog_entry.get("attributeName", "")))
+            source_note = f"{source_note} | matched_field_catalog"
+        elif question_number is not None:
+            field_name = question_number_map.get(question_number, "")
+        if not field_name:
+            fallback_canonical = _match_canonical_field(key, alias_index)
+            if fallback_canonical:
+                field_name = fallback_canonical
+
+        if field_name:
+            existing = merged_values.get(field_name)
             if existing and value not in existing["value"]:
                 existing["value"] = f"{existing['value']} ; {value}"
             elif not existing:
-                source_note = f"Derived from table key: {key}"
-                if question_number is not None:
-                    source_note = f"Derived from question {question_number}: {key}"
-                merged_values[canonical] = {
-                    "field_name": canonical,
+                matched_catalog_entry = catalog_entry or _match_field_catalog_entry(field_name, field_catalog_index)
+                merged_values[field_name] = {
+                    "field_name": field_name,
                     "value": value,
                     "source": "table",
                     "notes": source_note,
-                    **_extract_catalog_metadata(
-                        catalog_entry or _match_field_catalog_entry(canonical, field_catalog_index)
-                    ),
+                    **_extract_catalog_metadata(matched_catalog_entry),
                 }
         else:
             inferred = _infer_field_name(key)
@@ -174,7 +181,7 @@ def _rule_based_seed(payload: dict[str, Any], config: dict[str, Any]) -> dict[st
                         "field_name": inferred,
                         "value": value,
                         "source": "table",
-                        "notes": note,
+                        "notes": f"{note} | fallback_inferred_without_catalog_match",
                         **_extract_catalog_metadata(
                             catalog_entry or _match_field_catalog_entry(inferred, field_catalog_index)
                         ),
@@ -264,9 +271,11 @@ def _build_extraction_user_prompt(raw_payload: dict[str, Any], seed: dict[str, A
         "- Column 3 (and any following columns) contain the value.\n"
         "- Do not produce numeric field names like '1', '2', etc.\n\n"
         f"Target schema:\n{json.dumps(schema, ensure_ascii=True)}\n\n"
-        "Canonical field names are guidance, not a strict whitelist.\n"
-        "If a table attribute does not map to a canonical field, create a meaningful snake_case field_name "
-        "and keep it under normalized_fields.\n"
+        "The field catalog is the primary attribute-definition source when provided.\n"
+        "Canonical field names, alias mappings, and question-number mappings are fallback hints only.\n"
+        "If a table attribute matches a field catalog entry, derive field_name from the catalog attributeName.\n"
+        "If a table attribute does not map to a field catalog entry, create a meaningful snake_case field_name "
+        "and then use canonical/alias/question mappings only as fallback support.\n"
         "Only use additional_fields for truly miscellaneous content that cannot be represented as a field.\n\n"
         "If a field catalog is provided, match extracted fields to the closest catalog entry.\n"
         "Use attributeName as the primary matching key. Do not rely on attributeId text for matching, "

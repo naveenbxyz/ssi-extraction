@@ -121,10 +121,10 @@ Path: `config/isda_extraction_config.json`
 
 This file controls:
 
-- canonical field names
-- alias mapping
-- question-number mapping
 - field catalog path
+- canonical field names as fallback
+- alias mapping as fallback
+- question-number mapping as fallback
 - extraction prompt behavior
 - chat prompt behavior
 
@@ -166,7 +166,9 @@ When the catalog file is present, the ISDA extraction pipeline will:
 
 - load the field catalog from disk during config loading
 - include the catalog entries in the LLM extraction prompt
-- use `attributeName` to improve rule-based matching when possible
+- treat the field catalog as the primary attribute-definition source
+- use `attributeName` as the primary rule-based matching key
+- use canonical fields, alias mappings, and question-number mappings only as fallback
 - attach catalog metadata to extracted `normalized_fields` and `additional_fields` entries when a match is found
 
 Important:
