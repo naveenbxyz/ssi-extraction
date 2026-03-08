@@ -99,6 +99,13 @@ type IsdaMappingSummary = {
   coverage_percent: number;
 };
 
+type IsdaCatalogResponse = {
+  field_catalog_path: string;
+  count: number;
+  total_count: number;
+  rows: RowData[];
+};
+
 type ChatMessage = {
   role: "user" | "assistant";
   content: string;
@@ -119,7 +126,7 @@ export default function App() {
   const [workflow, setWorkflow] = useState<Workflow>("isda");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [ssiTab, setSsiTab] = useState<"overview" | "database">("overview");
-  const [isdaTab, setIsdaTab] = useState<"overview" | "database">("overview");
+  const [isdaTab, setIsdaTab] = useState<"overview" | "database" | "catalog">("overview");
   const [config, setConfig] = useState<ConfigPaths>({
     llmConfigPath: "config/llm_config.json",
     isdaConfigPath: "config/isda_extraction_config.json",
@@ -167,6 +174,9 @@ export default function App() {
   const [isdaChatQuestion, setIsdaChatQuestion] = useState("");
   const [isdaChatLoading, setIsdaChatLoading] = useState(false);
   const [isdaChatHistory, setIsdaChatHistory] = useState<ChatMessage[]>([]);
+  const [isdaCatalogSearch, setIsdaCatalogSearch] = useState("");
+  const deferredIsdaCatalogSearch = useDeferredValue(isdaCatalogSearch);
+  const [isdaCatalog, setIsdaCatalog] = useState<IsdaCatalogResponse | null>(null);
 
   async function reloadBootstrap(nextConfig = config) {
     setLoadingBootstrap(true);
@@ -258,11 +268,25 @@ export default function App() {
     }
   }
 
+  async function refreshIsdaCatalog(nextSearch = deferredIsdaCatalogSearch, nextConfig = config) {
+    try {
+      const query = toQueryString({
+        isda_config_path: nextConfig.isdaConfigPath,
+        search_term: nextSearch,
+      });
+      const payload = await fetchJson<IsdaCatalogResponse>(`/api/isda/catalog?${query}`);
+      startTransition(() => setIsdaCatalog(payload));
+    } catch (error) {
+      setAlert({ type: "error", message: errorMessage(error) });
+    }
+  }
+
   useEffect(() => {
     void reloadBootstrap();
     void refreshSsiLatest();
     void refreshSsiView();
     void refreshIsdaDocuments();
+    void refreshIsdaCatalog();
   }, []);
 
   useEffect(() => {
@@ -286,6 +310,10 @@ export default function App() {
     }
     void refreshIsdaFields(selectedIsdaDocId, deferredIsdaFieldSearch);
   }, [deferredIsdaFieldSearch]);
+
+  useEffect(() => {
+    void refreshIsdaCatalog(deferredIsdaCatalogSearch);
+  }, [deferredIsdaCatalogSearch]);
 
   const filteredStandard = filterRows(ssiLatest.structured?.records ?? [], deferredSsiLatestSearch);
   const filteredUs = filterRows(ssiLatest.structured?.us_securities_settlement ?? [], deferredSsiLatestSearch);
@@ -699,9 +727,10 @@ export default function App() {
                 tabs={[
                   { id: "overview", label: "Overview" },
                   { id: "database", label: "Database" },
+                  { id: "catalog", label: "Catalog" },
                 ]}
                 active={isdaTab}
-                onChange={(value) => setIsdaTab(value as "overview" | "database")}
+                onChange={(value) => setIsdaTab(value as "overview" | "database" | "catalog")}
               />
 
               {isdaTab === "overview" ? (
@@ -819,7 +848,7 @@ export default function App() {
                     />
                   </Card>
                 </>
-              ) : (
+              ) : isdaTab === "database" ? (
                 <>
                   <div className="grid gap-6 2xl:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]">
                     <Card className="p-5 md:p-6">
@@ -911,6 +940,42 @@ export default function App() {
                     </div>
                   </Card>
                 </>
+              ) : (
+                <Card className="p-5 md:p-6">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                    <SectionHeader title="Field Catalog" />
+                    <div className="w-full max-w-sm">
+                      <Field label="Search catalog">
+                        <Input value={isdaCatalogSearch} onChange={(event) => setIsdaCatalogSearch(event.target.value)} />
+                      </Field>
+                    </div>
+                  </div>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <MiniStat
+                      label="Loaded attributes"
+                      value={String(isdaCatalog?.total_count ?? bootstrap?.isda_config_summary.field_catalog_count ?? 0)}
+                      icon={<TableProperties className="h-4 w-4" />}
+                    />
+                    <MiniStat
+                      label="Visible rows"
+                      value={String(isdaCatalog?.count ?? 0)}
+                      icon={<Database className="h-4 w-4" />}
+                    />
+                    <MiniStat
+                      label="Catalog path"
+                      value={truncateMiddle(isdaCatalog?.field_catalog_path ?? bootstrap?.isda_config_summary.field_catalog_path ?? "", 24)}
+                      icon={<FileSearch className="h-4 w-4" />}
+                    />
+                    <MiniStat
+                      label="Workflow"
+                      value="ISDA"
+                      icon={<ShieldCheck className="h-4 w-4" />}
+                    />
+                  </div>
+                  <div className="mt-5">
+                    <DataTable rows={isdaCatalog?.rows ?? []} />
+                  </div>
+                </Card>
               )}
             </>
           )}
@@ -1272,6 +1337,14 @@ function formatPercent(value: number | undefined) {
     return "0%";
   }
   return `${value}%`;
+}
+
+function truncateMiddle(value: string, maxLength: number) {
+  if (value.length <= maxLength || maxLength < 5) {
+    return value;
+  }
+  const sideLength = Math.floor((maxLength - 3) / 2);
+  return `${value.slice(0, sideLength)}...${value.slice(-sideLength)}`;
 }
 
 function errorMessage(error: unknown) {

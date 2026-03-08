@@ -103,6 +103,7 @@ The ISDA flow is also split into two tabs:
 
 1. `Overview`
 2. `Database`
+3. `Catalog`
 
 Within `Overview`, the content is stacked vertically:
 
@@ -115,6 +116,11 @@ Within `Database`, the user can:
 1. Select from saved documents
 2. Inspect searchable field rows
 3. Run custom SQL if needed
+
+Within `Catalog`, the user can:
+
+1. Inspect the loaded field catalog from the configured JSON file
+2. Search attribute definitions directly while reviewing extraction results
 
 This reflects the document-centric nature of ISDA review work.
 

@@ -211,6 +211,7 @@ SSI SQLite tables:
 - Review:
   - latest extracted document
   - mapping coverage against the field catalog
+  - loaded field catalog entries in the dedicated Catalog tab
   - saved document inventory
   - searchable field rows
   - read-only SQL query results

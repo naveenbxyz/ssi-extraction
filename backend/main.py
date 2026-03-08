@@ -232,6 +232,34 @@ def get_isda_config(config_path: str = Query(DEFAULT_ISDA_CONFIG)) -> dict[str, 
     }
 
 
+@app.get("/api/isda/catalog")
+def get_isda_catalog(
+    isda_config_path: str = Query(DEFAULT_ISDA_CONFIG),
+    search_term: str = Query(""),
+) -> dict[str, Any]:
+    config = _load_isda_app_config(isda_config_path)
+    rows = config.get("field_catalog", [])
+    if not isinstance(rows, list):
+        rows = []
+
+    normalized_search = search_term.strip().lower()
+    if normalized_search:
+        filtered_rows = [
+            row
+            for row in rows
+            if isinstance(row, dict) and normalized_search in json.dumps(row, ensure_ascii=True).lower()
+        ]
+    else:
+        filtered_rows = [row for row in rows if isinstance(row, dict)]
+
+    return {
+        "field_catalog_path": config.get("field_catalog_path", ""),
+        "count": len(filtered_rows),
+        "total_count": len(rows),
+        "rows": filtered_rows,
+    }
+
+
 @app.post("/api/ssi/extract")
 async def extract_ssi(
     file: UploadFile = File(...),
