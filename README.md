@@ -122,9 +122,6 @@ Path: `config/isda_extraction_config.json`
 This file controls:
 
 - field catalog path
-- canonical field names as fallback
-- alias mapping as fallback
-- question-number mapping as fallback
 - extraction prompt behavior
 - chat prompt behavior
 
@@ -166,15 +163,18 @@ When the catalog file is present, the ISDA extraction pipeline will:
 
 - load the field catalog from disk during config loading
 - include the catalog entries in the LLM extraction prompt
-- treat the field catalog as the primary attribute-definition source
+- treat the field catalog as the only canonical attribute-definition source
 - use `attributeName` as the primary rule-based matching key
-- use canonical fields, alias mappings, and question-number mappings only as fallback
-- attach catalog metadata to extracted `normalized_fields` and `additional_fields` entries when a match is found
+- keep catalog-matched attributes in `normalized_fields`
+- keep unmatched document labels in `additional_fields`
+- attach catalog metadata to extracted fields when a match is found
+- compute `mapping_summary` so the UI can show mapped attributes vs. unmatched document fields
 
 Important:
 
 - matching should be driven by `attributeName`
 - `attributeId` is treated as metadata and may contain category prefixes such as `Collateral:`, `ISDA:`, or `Generic:`
+- the old question-number map and legacy 23-question template are no longer used for ISDA normalization
 
 The app still keeps `field_name`, `value`, `source`, and `notes` for compatibility, while adding the catalog metadata alongside them.
 
@@ -208,6 +208,7 @@ SSI SQLite tables:
   - existing country key replaces the stored document and its field rows
 - Review:
   - latest extracted document
+  - mapping coverage against the field catalog
   - saved document inventory
   - searchable field rows
   - read-only SQL query results

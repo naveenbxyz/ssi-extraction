@@ -167,10 +167,12 @@ The large 201-field catalog is treated as an external JSON artifact rather than 
 
 The current design expects the backend to load that file from disk and feed it into extraction-time matching.
 
-The current precedence is:
+The current extraction model is:
 
-1. field catalog
-2. canonical fields / aliases / question-number mappings as fallback
+1. field catalog drives canonical matching through `attributeName`
+2. catalog-matched items stay in `normalized_fields`
+3. unmatched document labels stay in `additional_fields`
+4. the backend computes a mapping summary for coverage and auditability
 
 ### Why read-only SQL remains in the product
 

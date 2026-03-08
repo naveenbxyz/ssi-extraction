@@ -34,13 +34,22 @@ def _infer_field_name(raw_key: str) -> str:
     key = re.sub(r"[\r\n\t]+", " ", key)
     key = re.sub(r"[^a-z0-9]+", "_", key)
     key = re.sub(r"_+", "_", key).strip("_")
-    if not key:
-        return ""
-    if re.fullmatch(r"\d+", key):
-        return ""
-    if len(key) < 3:
+    if not key or re.fullmatch(r"\d+", key) or len(key) < 3:
         return ""
     return key[:120]
+
+
+def _normalize_allowed_values(value: Any) -> Optional[list[str]]:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        normalized = [str(item).strip() for item in value if str(item).strip()]
+        return normalized or None
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return [cleaned] if cleaned else None
+    cleaned = str(value).strip()
+    return [cleaned] if cleaned else None
 
 
 def _extract_catalog_metadata(entry: Optional[dict[str, Any]]) -> dict[str, Any]:
@@ -48,7 +57,9 @@ def _extract_catalog_metadata(entry: Optional[dict[str, Any]]) -> dict[str, Any]
         return {}
     metadata: dict[str, Any] = {}
     for key in FIELD_CATALOG_KEYS:
-        if key in entry:
+        if key == "allowedValues":
+            metadata[key] = _normalize_allowed_values(entry.get(key))
+        else:
             metadata[key] = entry.get(key)
     return metadata
 
@@ -56,9 +67,6 @@ def _extract_catalog_metadata(entry: Optional[dict[str, Any]]) -> dict[str, Any]
 def _build_field_catalog_index(field_catalog: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     index: dict[str, dict[str, Any]] = {}
     for entry in field_catalog:
-        # Match on attributeName, not attributeId. attributeId may include category
-        # prefixes like "Collateral:" or "ISDA:" and is metadata, not the canonical
-        # comparison key for extraction matching.
         attribute_name = str(entry.get("attributeName", "")).strip()
         if not attribute_name:
             continue
@@ -71,6 +79,8 @@ def _match_field_catalog_entry(
     field_catalog_index: dict[str, dict[str, Any]],
 ) -> Optional[dict[str, Any]]:
     normalized = _normalize_key(key)
+    if not normalized:
+        return None
     if normalized in field_catalog_index:
         return field_catalog_index[normalized]
 
@@ -87,45 +97,145 @@ def _match_field_catalog_entry(
     return best_match
 
 
-def _build_alias_index(field_aliases: dict[str, list[str]]) -> dict[str, str]:
-    index: dict[str, str] = {}
-    for canonical, aliases in field_aliases.items():
-        index[_normalize_key(canonical)] = canonical
-        for alias in aliases:
-            index[_normalize_key(alias)] = canonical
-    return index
+def _merge_field_value(target: dict[str, Any], incoming: dict[str, Any]) -> None:
+    if incoming["value"] not in target["value"]:
+        target["value"] = f"{target['value']} ; {incoming['value']}"
+
+    incoming_notes = str(incoming.get("notes", "")).strip()
+    if incoming_notes and incoming_notes not in str(target.get("notes", "")):
+        if target.get("notes"):
+            target["notes"] = f"{target['notes']} | {incoming_notes}"
+        else:
+            target["notes"] = incoming_notes
+
+    for key in FIELD_CATALOG_KEYS:
+        if (not target.get(key)) and incoming.get(key):
+            target[key] = incoming.get(key)
 
 
-def _match_canonical_field(key: str, alias_index: dict[str, str]) -> Optional[str]:
-    normalized = _normalize_key(key)
-    if normalized in alias_index:
-        return alias_index[normalized]
+def _dedupe_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_name: dict[str, dict[str, Any]] = {}
+    for field in fields:
+        field_name = str(field.get("field_name", "")).strip()
+        value = str(field.get("value", "")).strip()
+        if not field_name or not value:
+            continue
+        if field_name not in by_name:
+            by_name[field_name] = field
+            continue
+        _merge_field_value(by_name[field_name], field)
+    return list(by_name.values())
 
-    for alias_norm, canonical in alias_index.items():
-        if alias_norm and alias_norm in normalized:
-            return canonical
-    return None
+
+def _normalize_field_entries(entries: Any) -> list[dict[str, Any]]:
+    if not isinstance(entries, list):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        field_name = str(item.get("field_name", "")).strip()
+        value = str(item.get("value", "")).strip()
+        source = str(item.get("source", "")).strip() or "inferred"
+        notes = str(item.get("notes", "")).strip()
+        if not field_name or not value:
+            continue
+        normalized.append(
+            {
+                "field_name": field_name,
+                "value": value,
+                "source": source,
+                "notes": notes,
+                "attributeId": str(item.get("attributeId", "")).strip(),
+                "attributeArea": str(item.get("attributeArea", "")).strip(),
+                "attributeName": str(item.get("attributeName", "")).strip(),
+                "formType": str(item.get("formType", "")).strip(),
+                "allowedValuesRaw": str(item.get("allowedValuesRaw", "")).strip(),
+                "allowedValues": _normalize_allowed_values(item.get("allowedValues")),
+                "populationMethod": str(item.get("populationMethod", "")).strip(),
+                "category": str(item.get("category", "")).strip(),
+            }
+        )
+    return normalized
+
+
+def _annotate_with_catalog(
+    fields: list[dict[str, Any]],
+    field_catalog_index: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    annotated: list[dict[str, Any]] = []
+    for field in fields:
+        catalog_entry = None
+        if field.get("attributeName"):
+            catalog_entry = _match_field_catalog_entry(str(field.get("attributeName", "")), field_catalog_index)
+        if catalog_entry is None:
+            catalog_entry = _match_field_catalog_entry(str(field.get("field_name", "")), field_catalog_index)
+
+        if catalog_entry is not None:
+            normalized_field_name = _infer_field_name(str(catalog_entry.get("attributeName", "")))
+            if normalized_field_name:
+                field["field_name"] = normalized_field_name
+            for key, value in _extract_catalog_metadata(catalog_entry).items():
+                if key == "allowedValues":
+                    field[key] = _normalize_allowed_values(value)
+                elif not field.get(key):
+                    field[key] = value
+        annotated.append(field)
+    return annotated
+
+
+def _partition_fields_by_catalog_match(
+    fields: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    matched: list[dict[str, Any]] = []
+    unmatched: list[dict[str, Any]] = []
+    for field in fields:
+        if str(field.get("attributeName", "")).strip():
+            matched.append(field)
+        else:
+            unmatched.append(field)
+    return matched, unmatched
+
+
+def _build_mapping_summary(
+    normalized_fields: list[dict[str, Any]],
+    additional_fields: list[dict[str, Any]],
+    field_catalog: list[dict[str, Any]],
+) -> dict[str, Any]:
+    catalog_attribute_names = {
+        _normalize_key(str(entry.get("attributeName", "")))
+        for entry in field_catalog
+        if str(entry.get("attributeName", "")).strip()
+    }
+    mapped_attribute_names = {
+        _normalize_key(str(field.get("attributeName", "")))
+        for field in normalized_fields
+        if str(field.get("attributeName", "")).strip()
+    }
+    mapped_attribute_count = len(mapped_attribute_names)
+    catalog_attribute_count = len(catalog_attribute_names)
+    coverage_percent = 0.0
+    if catalog_attribute_count > 0:
+        coverage_percent = round((mapped_attribute_count / catalog_attribute_count) * 100, 1)
+
+    return {
+        "catalog_attribute_count": catalog_attribute_count,
+        "mapped_attribute_count": mapped_attribute_count,
+        "unmapped_catalog_attribute_count": max(catalog_attribute_count - mapped_attribute_count, 0),
+        "unmatched_document_field_count": len(additional_fields),
+        "extracted_field_count": len(normalized_fields) + len(additional_fields),
+        "coverage_percent": coverage_percent,
+    }
 
 
 def _rule_based_seed(payload: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
-    field_aliases = config.get("field_aliases", {})
-    alias_index = _build_alias_index(field_aliases)
     field_catalog = config.get("field_catalog", [])
     field_catalog_index = (
         _build_field_catalog_index(field_catalog) if isinstance(field_catalog, list) else {}
     )
-    question_number_map_raw = config.get("question_number_field_map", {})
-    question_number_map: dict[int, str] = {}
-    if isinstance(question_number_map_raw, dict):
-        for key, value in question_number_map_raw.items():
-            try:
-                question_number = int(str(key).strip())
-            except ValueError:
-                continue
-            if isinstance(value, str) and value.strip():
-                question_number_map[question_number] = value.strip()
 
-    merged_values: dict[str, dict[str, Any]] = {}
+    matched_fields: dict[str, dict[str, Any]] = {}
     additional_fields: list[dict[str, Any]] = []
 
     for item in payload.get("key_value_candidates", []):
@@ -136,68 +246,39 @@ def _rule_based_seed(payload: dict[str, Any], config: dict[str, Any]) -> dict[st
         if not key or not value:
             continue
 
-        catalog_entry = _match_field_catalog_entry(key, field_catalog_index)
-        field_name = ""
         source_note = f"Derived from table key: {key}"
         if question_number is not None:
             source_note = f"Derived from question {question_number}: {key}"
 
-        # Primary matching source: field catalog. Legacy canonical fields,
-        # aliases, and question-number mappings are fallbacks only.
+        catalog_entry = _match_field_catalog_entry(key, field_catalog_index)
         if catalog_entry is not None:
             field_name = _infer_field_name(str(catalog_entry.get("attributeName", "")))
-            source_note = f"{source_note} | matched_field_catalog"
-        elif question_number is not None:
-            field_name = question_number_map.get(question_number, "")
-        if not field_name:
-            fallback_canonical = _match_canonical_field(key, alias_index)
-            if fallback_canonical:
-                field_name = fallback_canonical
-
-        if field_name:
-            existing = merged_values.get(field_name)
-            if existing and value not in existing["value"]:
-                existing["value"] = f"{existing['value']} ; {value}"
-            elif not existing:
-                matched_catalog_entry = catalog_entry or _match_field_catalog_entry(field_name, field_catalog_index)
-                merged_values[field_name] = {
-                    "field_name": field_name,
-                    "value": value,
-                    "source": "table",
-                    "notes": source_note,
-                    **_extract_catalog_metadata(matched_catalog_entry),
-                }
-        else:
-            inferred = _infer_field_name(key)
-            if inferred:
-                existing = merged_values.get(inferred)
-                if existing and value not in existing["value"]:
-                    existing["value"] = f"{existing['value']} ; {value}"
-                elif not existing:
-                    note = f"Inferred field name from table key: {key}"
-                    if question_number is not None:
-                        note = f"Inferred from question {question_number}: {key}"
-                    merged_values[inferred] = {
-                        "field_name": inferred,
-                        "value": value,
-                        "source": "table",
-                        "notes": f"{note} | fallback_inferred_without_catalog_match",
-                        **_extract_catalog_metadata(
-                            catalog_entry or _match_field_catalog_entry(inferred, field_catalog_index)
-                        ),
-                    }
+            if not field_name:
+                continue
+            incoming = {
+                "field_name": field_name,
+                "value": value,
+                "source": "table",
+                "notes": f"{source_note} | matched_field_catalog",
+                **_extract_catalog_metadata(catalog_entry),
+            }
+            existing = matched_fields.get(field_name)
+            if existing is None:
+                matched_fields[field_name] = incoming
             else:
-                additional_fields.append(
-                    {
-                        "field_name": key,
-                        "value": value,
-                        "source": "table",
-                        "notes": "Unmapped table key",
-                        **_extract_catalog_metadata(catalog_entry),
-                    }
-                )
+                _merge_field_value(existing, incoming)
+            continue
 
-    normalized_fields = list(merged_values.values())
+        additional_fields.append(
+            {
+                "field_name": _infer_field_name(key) or key,
+                "value": value,
+                "source": "table",
+                "notes": f"{source_note} | no_field_catalog_match",
+            }
+        )
+
+    normalized_fields = list(matched_fields.values())
 
     country = ""
     jurisdiction = ""
@@ -257,9 +338,6 @@ def _build_extraction_user_prompt(raw_payload: dict[str, Any], seed: dict[str, A
         "notes": ["string"],
     }
 
-    canonical_fields = config.get("canonical_fields", [])
-    field_aliases = config.get("field_aliases", {})
-    question_number_map = config.get("question_number_field_map", {})
     field_catalog = config.get("field_catalog", [])
 
     return (
@@ -271,151 +349,76 @@ def _build_extraction_user_prompt(raw_payload: dict[str, Any], seed: dict[str, A
         "- Column 3 (and any following columns) contain the value.\n"
         "- Do not produce numeric field names like '1', '2', etc.\n\n"
         f"Target schema:\n{json.dumps(schema, ensure_ascii=True)}\n\n"
-        "The field catalog is the primary attribute-definition source when provided.\n"
-        "Canonical field names, alias mappings, and question-number mappings are fallback hints only.\n"
-        "If a table attribute matches a field catalog entry, derive field_name from the catalog attributeName.\n"
-        "If a table attribute does not map to a field catalog entry, create a meaningful snake_case field_name "
-        "and then use canonical/alias/question mappings only as fallback support.\n"
-        "Only use additional_fields for truly miscellaneous content that cannot be represented as a field.\n\n"
-        "If a field catalog is provided, match extracted fields to the closest catalog entry.\n"
-        "Use attributeName as the primary matching key. Do not rely on attributeId text for matching, "
-        "because attributeId may include category prefixes such as 'Collateral:', 'ISDA:', or 'Generic:'.\n"
-        "Keep field_name as a meaningful snake_case identifier for application compatibility.\n"
-        "When a confident catalog match exists, populate attributeId, attributeArea, attributeName, "
-        "formType, allowedValuesRaw, allowedValues, populationMethod, and category from the catalog entry.\n"
-        "When no confident catalog match exists, leave those catalog fields empty or null and explain uncertainty in notes.\n\n"
-        f"Canonical field names to prefer:\n{json.dumps(canonical_fields, ensure_ascii=True)}\n\n"
-        f"Field alias mapping:\n{json.dumps(field_aliases, ensure_ascii=True)}\n\n"
-        f"Question number mapping (if available):\n{json.dumps(question_number_map, ensure_ascii=True)}\n\n"
+        "The field catalog is the primary and only canonical attribute-definition source.\n"
+        "Match extracted fields to the closest field catalog entry using attributeName.\n"
+        "Do not use attributeId for matching because it may include category prefixes such as "
+        "'Collateral:', 'ISDA:', or 'Generic:'.\n"
+        "Do not constrain extraction to any legacy 23-question template or question-number map.\n"
+        "If a confident field catalog match exists, place the item in normalized_fields and populate "
+        "attributeId, attributeArea, attributeName, formType, allowedValuesRaw, allowedValues, "
+        "populationMethod, and category from the catalog entry.\n"
+        "If no confident field catalog match exists, place the item in additional_fields instead of "
+        "inventing a canonical field.\n"
+        "Keep field_name as a meaningful snake_case identifier derived from the matched attributeName "
+        "for normalized_fields, or from the document label for additional_fields.\n\n"
         f"Field catalog entries (if available):\n{json.dumps(field_catalog, ensure_ascii=True)}\n\n"
         f"Rule-based seed:\n{json.dumps(seed, ensure_ascii=True)}\n\n"
         f"DOCX raw payload:\n{json.dumps(raw_payload, ensure_ascii=True)}"
     )
 
 
-def _normalize_allowed_values(value: Any) -> Optional[list[str]]:
-    if value is None:
-        return None
-    if isinstance(value, list):
-        normalized = [str(item).strip() for item in value if str(item).strip()]
-        return normalized or None
-    if isinstance(value, str):
-        cleaned = value.strip()
-        return [cleaned] if cleaned else None
-    cleaned = str(value).strip()
-    return [cleaned] if cleaned else None
+def _merge_llm_and_seed(
+    llm_payload: Optional[dict[str, Any]],
+    seed: dict[str, Any],
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    field_catalog = config.get("field_catalog", [])
+    field_catalog_index = (
+        _build_field_catalog_index(field_catalog) if isinstance(field_catalog, list) else {}
+    )
 
-
-def _normalize_field_entries(entries: Any) -> list[dict[str, Any]]:
-    if not isinstance(entries, list):
-        return []
-
-    normalized: list[dict[str, Any]] = []
-    for item in entries:
-        if not isinstance(item, dict):
-            continue
-        field_name = str(item.get("field_name", "")).strip()
-        value = str(item.get("value", "")).strip()
-        source = str(item.get("source", "")).strip() or "inferred"
-        notes = str(item.get("notes", "")).strip()
-        if not field_name or not value:
-            continue
-        normalized.append(
-            {
-                "field_name": field_name,
-                "value": value,
-                "source": source,
-                "notes": notes,
-                "attributeId": str(item.get("attributeId", "")).strip(),
-                "attributeArea": str(item.get("attributeArea", "")).strip(),
-                "attributeName": str(item.get("attributeName", "")).strip(),
-                "formType": str(item.get("formType", "")).strip(),
-                "allowedValuesRaw": str(item.get("allowedValuesRaw", "")).strip(),
-                "allowedValues": _normalize_allowed_values(item.get("allowedValues")),
-                "populationMethod": str(item.get("populationMethod", "")).strip(),
-                "category": str(item.get("category", "")).strip(),
-            }
-        )
-    return normalized
-
-
-def _promote_additional_to_normalized(
-    additional_entries: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    promoted: list[dict[str, Any]] = []
-    residual: list[dict[str, Any]] = []
-
-    for item in additional_entries:
-        inferred = _infer_field_name(item.get("field_name", ""))
-        if inferred:
-            promoted.append(
-                {
-                    "field_name": inferred,
-                    "value": item.get("value", ""),
-                    "source": item.get("source", "") or "inferred",
-                    "notes": f"{item.get('notes', '')} | promoted_from_additional".strip(" |"),
-                    **_extract_catalog_metadata(item),
-                }
-            )
-        else:
-            residual.append(item)
-
-    return promoted, residual
-
-
-def _dedupe_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    by_name: dict[str, dict[str, Any]] = {}
-    for field in fields:
-        name = field["field_name"]
-        if name not in by_name:
-            by_name[name] = field
-            continue
-
-        current = by_name[name]
-        if field["value"] not in current["value"]:
-            current["value"] = f"{current['value']} ; {field['value']}"
-            if current.get("notes") and field.get("notes"):
-                current["notes"] = f"{current['notes']} | {field['notes']}"
-        for key in FIELD_CATALOG_KEYS:
-            if (not current.get(key)) and field.get(key):
-                current[key] = field.get(key)
-    return list(by_name.values())
-
-
-def _merge_llm_and_seed(llm_payload: Optional[dict[str, Any]], seed: dict[str, Any]) -> dict[str, Any]:
-    if llm_payload is None:
-        return seed
-
-    llm_fields = _normalize_field_entries(llm_payload.get("normalized_fields"))
-    llm_additional = _normalize_field_entries(llm_payload.get("additional_fields"))
-
+    llm_fields = _normalize_field_entries(llm_payload.get("normalized_fields") if llm_payload else None)
+    llm_additional = _normalize_field_entries(llm_payload.get("additional_fields") if llm_payload else None)
     seed_fields = _normalize_field_entries(seed.get("normalized_fields"))
     seed_additional = _normalize_field_entries(seed.get("additional_fields"))
 
-    promoted_seed_additional, residual_seed_additional = _promote_additional_to_normalized(seed_additional)
-    promoted_llm_additional, residual_llm_additional = _promote_additional_to_normalized(llm_additional)
+    combined_fields = _annotate_with_catalog(
+        _dedupe_fields(seed_fields + llm_fields + llm_additional + seed_additional),
+        field_catalog_index,
+    )
+    normalized_fields, additional_fields = _partition_fields_by_catalog_match(combined_fields)
+    normalized_fields = _dedupe_fields(normalized_fields)
+    additional_fields = _dedupe_fields(additional_fields)
 
-    merged_fields = _dedupe_fields(seed_fields + llm_fields + promoted_seed_additional + promoted_llm_additional)
-    merged_additional = _dedupe_fields(residual_seed_additional + residual_llm_additional)
-
-    country = str(llm_payload.get("country", "")).strip() or str(seed.get("country", "")).strip()
-    jurisdiction = str(llm_payload.get("jurisdiction", "")).strip() or str(seed.get("jurisdiction", "")).strip()
-    summary = str(llm_payload.get("summary", "")).strip()
-
+    country = ""
+    jurisdiction = ""
+    summary = ""
     notes: list[str] = []
-    raw_notes = llm_payload.get("notes", [])
-    if isinstance(raw_notes, list):
-        notes.extend([str(n) for n in raw_notes if str(n).strip()])
+
+    if llm_payload is not None:
+        country = str(llm_payload.get("country", "")).strip()
+        jurisdiction = str(llm_payload.get("jurisdiction", "")).strip()
+        summary = str(llm_payload.get("summary", "")).strip()
+        raw_notes = llm_payload.get("notes", [])
+        if isinstance(raw_notes, list):
+            notes.extend([str(item) for item in raw_notes if str(item).strip()])
+
+    if not country:
+        country = str(seed.get("country", "")).strip()
+    if not jurisdiction:
+        jurisdiction = str(seed.get("jurisdiction", "")).strip()
+
     raw_seed_notes = seed.get("notes", [])
     if isinstance(raw_seed_notes, list):
-        notes.extend([str(n) for n in raw_seed_notes if str(n).strip()])
+        notes.extend([str(item) for item in raw_seed_notes if str(item).strip()])
 
     return {
         "country": country,
         "jurisdiction": jurisdiction,
         "summary": summary,
-        "normalized_fields": merged_fields,
-        "additional_fields": merged_additional,
+        "normalized_fields": normalized_fields,
+        "additional_fields": additional_fields,
+        "mapping_summary": _build_mapping_summary(normalized_fields, additional_fields, field_catalog),
         "notes": notes,
     }
 
@@ -451,26 +454,38 @@ def run_isda_extraction_pipeline(
     finally:
         client.close()
 
-    merged = _merge_llm_and_seed(llm_payload, seed)
+    merged = _merge_llm_and_seed(llm_payload, seed, config)
 
     if not merged.get("country"):
         for field in merged.get("normalized_fields", []):
             if field.get("field_name") == "country" and field.get("value"):
                 merged["country"] = field["value"]
+                break
+    if not merged.get("country"):
+        for field in merged.get("additional_fields", []):
+            if field.get("field_name") == "country" and field.get("value"):
+                merged["country"] = field["value"]
+                break
 
     if not merged.get("jurisdiction"):
         for field in merged.get("normalized_fields", []):
             if field.get("field_name") == "jurisdiction" and field.get("value"):
                 merged["jurisdiction"] = field["value"]
+                break
+    if not merged.get("jurisdiction"):
+        for field in merged.get("additional_fields", []):
+            if field.get("field_name") == "jurisdiction" and field.get("value"):
+                merged["jurisdiction"] = field["value"]
+                break
 
     if not merged.get("country") and merged.get("jurisdiction"):
         merged["country"] = str(merged["jurisdiction"])
 
     logger.info(
-        "ISDA extraction pipeline completed country=%s jurisdiction=%s field_count=%d additional_field_count=%d",
+        "ISDA extraction pipeline completed country=%s jurisdiction=%s mapped_attribute_count=%d unmatched_document_field_count=%d",
         merged.get("country", ""),
         merged.get("jurisdiction", ""),
-        len(merged.get("normalized_fields", [])),
-        len(merged.get("additional_fields", [])),
+        int(merged.get("mapping_summary", {}).get("mapped_attribute_count", 0)),
+        int(merged.get("mapping_summary", {}).get("unmatched_document_field_count", 0)),
     )
     return raw_payload, merged

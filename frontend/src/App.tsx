@@ -26,8 +26,8 @@ type BootstrapResponse = {
   };
   llm_config: Record<string, unknown> | null;
   isda_config_summary: {
-    canonical_field_count: number;
-    field_alias_count: number;
+    field_catalog_count: number;
+    field_catalog_path: string;
   };
   ssi_summary: Record<string, number>;
   isda_summary: Record<string, number>;
@@ -86,7 +86,17 @@ type IsdaStructuredPayload = {
   summary?: string;
   normalized_fields?: RowData[];
   additional_fields?: RowData[];
+  mapping_summary?: IsdaMappingSummary;
   notes?: string[];
+};
+
+type IsdaMappingSummary = {
+  catalog_attribute_count: number;
+  mapped_attribute_count: number;
+  unmapped_catalog_attribute_count: number;
+  unmatched_document_field_count: number;
+  extracted_field_count: number;
+  coverage_percent: number;
 };
 
 type ChatMessage = {
@@ -280,6 +290,8 @@ export default function App() {
   const filteredStandard = filterRows(ssiLatest.structured?.records ?? [], deferredSsiLatestSearch);
   const filteredUs = filterRows(ssiLatest.structured?.us_securities_settlement ?? [], deferredSsiLatestSearch);
   const filteredCash = filterRows(ssiLatest.structured?.cash_settlement ?? [], deferredSsiLatestSearch);
+  const latestIsdaMappingSummary = isdaLatest?.structured.mapping_summary ?? null;
+  const storedIsdaMappingSummary = getIsdaMappingSummary(isdaContext?.extraction_json);
 
   async function handleSsiExtract() {
     if (!ssiUploadFile) {
@@ -730,7 +742,41 @@ export default function App() {
                     <SectionHeader title="Document results" />
                     {isdaLatest ? (
                       <div className="space-y-5">
-                        <MiniStat label="Country key" value={isdaLatest.country_key} icon={<ShieldCheck className="h-4 w-4" />} />
+                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                          <MiniStat label="Country key" value={isdaLatest.country_key} icon={<ShieldCheck className="h-4 w-4" />} />
+                          <MiniStat
+                            label="Catalog attributes"
+                            value={String(latestIsdaMappingSummary?.catalog_attribute_count ?? 0)}
+                            icon={<TableProperties className="h-4 w-4" />}
+                          />
+                          <MiniStat
+                            label="Mapped attributes"
+                            value={String(latestIsdaMappingSummary?.mapped_attribute_count ?? 0)}
+                            icon={<ShieldCheck className="h-4 w-4" />}
+                          />
+                          <MiniStat
+                            label="Unmapped catalog"
+                            value={String(latestIsdaMappingSummary?.unmapped_catalog_attribute_count ?? 0)}
+                            icon={<Database className="h-4 w-4" />}
+                          />
+                          <MiniStat
+                            label="Coverage"
+                            value={formatPercent(latestIsdaMappingSummary?.coverage_percent)}
+                            icon={<FileSearch className="h-4 w-4" />}
+                          />
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <MiniStat
+                            label="Extracted fields"
+                            value={String(latestIsdaMappingSummary?.extracted_field_count ?? 0)}
+                            icon={<TableProperties className="h-4 w-4" />}
+                          />
+                          <MiniStat
+                            label="Unmatched document fields"
+                            value={String(latestIsdaMappingSummary?.unmatched_document_field_count ?? 0)}
+                            icon={<Database className="h-4 w-4" />}
+                          />
+                        </div>
                         {isdaLatest.structured.summary ? (
                           <div className="rounded-3xl bg-[hsl(var(--ink)/0.04)] p-4 text-sm leading-6 text-muted">
                             {isdaLatest.structured.summary}
@@ -740,12 +786,12 @@ export default function App() {
                           tabs={[
                             {
                               id: "normalized",
-                              label: `Normalized (${isdaLatest.structured.normalized_fields?.length ?? 0})`,
+                              label: `Mapped attributes (${isdaLatest.structured.normalized_fields?.length ?? 0})`,
                               content: <DataTable rows={isdaLatest.structured.normalized_fields ?? []} />,
                             },
                             {
                               id: "additional",
-                              label: `Additional (${isdaLatest.structured.additional_fields?.length ?? 0})`,
+                              label: `Unmatched document fields (${isdaLatest.structured.additional_fields?.length ?? 0})`,
                               content: <DataTable rows={isdaLatest.structured.additional_fields ?? []} />,
                             },
                             {
@@ -815,6 +861,30 @@ export default function App() {
                       {isdaContext?.summary ? (
                         <div className="mt-5 rounded-3xl bg-[hsl(var(--ink)/0.04)] p-4 text-sm leading-6 text-muted">
                           {isdaContext.summary}
+                        </div>
+                      ) : null}
+                      {storedIsdaMappingSummary ? (
+                        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                          <MiniStat
+                            label="Catalog attributes"
+                            value={String(storedIsdaMappingSummary.catalog_attribute_count)}
+                            icon={<TableProperties className="h-4 w-4" />}
+                          />
+                          <MiniStat
+                            label="Mapped attributes"
+                            value={String(storedIsdaMappingSummary.mapped_attribute_count)}
+                            icon={<ShieldCheck className="h-4 w-4" />}
+                          />
+                          <MiniStat
+                            label="Unmatched document fields"
+                            value={String(storedIsdaMappingSummary.unmatched_document_field_count)}
+                            icon={<Database className="h-4 w-4" />}
+                          />
+                          <MiniStat
+                            label="Coverage"
+                            value={formatPercent(storedIsdaMappingSummary.coverage_percent)}
+                            icon={<FileSearch className="h-4 w-4" />}
+                          />
                         </div>
                       ) : null}
                       <div className="mt-5">
@@ -1172,6 +1242,37 @@ function stringifyCell(value: unknown) {
     return JSON.stringify(value);
   }
   return String(value);
+}
+
+function getIsdaMappingSummary(payload: Record<string, unknown> | null | undefined): IsdaMappingSummary | null {
+  const candidate = payload?.mapping_summary;
+  if (!candidate || typeof candidate !== "object") {
+    return null;
+  }
+
+  const summary = candidate as Record<string, unknown>;
+  return {
+    catalog_attribute_count: toNumber(summary.catalog_attribute_count),
+    mapped_attribute_count: toNumber(summary.mapped_attribute_count),
+    unmapped_catalog_attribute_count: toNumber(summary.unmapped_catalog_attribute_count),
+    unmatched_document_field_count: toNumber(summary.unmatched_document_field_count),
+    extracted_field_count: toNumber(summary.extracted_field_count),
+    coverage_percent: toNumber(summary.coverage_percent),
+  };
+}
+
+function toNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  return 0;
+}
+
+function formatPercent(value: number | undefined) {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return "0%";
+  }
+  return `${value}%`;
 }
 
 function errorMessage(error: unknown) {

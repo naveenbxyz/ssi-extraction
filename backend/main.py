@@ -176,11 +176,11 @@ def bootstrap(
     try:
         isda_config = _load_isda_app_config(isda_config_path)
         isda_config_summary = {
-            "canonical_field_count": len(isda_config.get("canonical_fields", [])),
-            "field_alias_count": len(isda_config.get("field_aliases", {})),
+            "field_catalog_count": len(isda_config.get("field_catalog", [])),
+            "field_catalog_path": str(isda_config.get("field_catalog_path", "")),
         }
     except HTTPException:
-        isda_config_summary = {"canonical_field_count": 0, "field_alias_count": 0}
+        isda_config_summary = {"field_catalog_count": 0, "field_catalog_path": ""}
 
     resolved_ssi_db_path = str(_resolve_path(ssi_db_path))
     resolved_isda_db_path = str(_resolve_path(isda_db_path))
@@ -212,8 +212,8 @@ def get_isda_config(config_path: str = Query(DEFAULT_ISDA_CONFIG)) -> dict[str, 
     config = _load_isda_app_config(config_path)
     return {
         "config_path": config_path,
-        "canonical_fields": config.get("canonical_fields", []),
-        "field_aliases": config.get("field_aliases", {}),
+        "field_catalog_path": config.get("field_catalog_path", ""),
+        "field_catalog_count": len(config.get("field_catalog", [])),
     }
 
 
