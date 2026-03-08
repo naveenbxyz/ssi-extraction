@@ -1,5 +1,5 @@
 import { startTransition, useDeferredValue, useEffect, useState, type ReactNode } from "react";
-import { Bot, Database, FileSearch, MessageSquare, PanelLeftClose, PanelLeftOpen, Search, ShieldCheck, TableProperties, Upload } from "lucide-react";
+import { Bot, Database, FileSearch, LoaderCircle, MessageSquare, PanelLeftClose, PanelLeftOpen, Search, ShieldCheck, TableProperties, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -330,6 +330,10 @@ export default function App() {
 
     setSsiExtracting(true);
     setAlert(null);
+    startTransition(() => {
+      setSsiLatest(emptySsiLatest);
+      setSsiChatHistory([]);
+    });
 
     try {
       const formData = new FormData();
@@ -372,6 +376,10 @@ export default function App() {
 
     setIsdaExtracting(true);
     setAlert(null);
+    startTransition(() => {
+      setIsdaLatest(null);
+      setIsdaChatHistory([]);
+    });
 
     try {
       const formData = new FormData();
@@ -606,7 +614,7 @@ export default function App() {
                     </div>
                     <div className="mt-5 flex flex-wrap gap-3">
                       <Button onClick={() => void handleSsiExtract()} disabled={ssiExtracting}>
-                        <Upload className="mr-2 h-4 w-4" />
+                        {ssiExtracting ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
                         {ssiExtracting ? "Extracting..." : "Run SSI extraction"}
                       </Button>
                       {ssiLatest.structured ? (
@@ -752,7 +760,7 @@ export default function App() {
                     </div>
                     <div className="mt-5 flex flex-wrap gap-3">
                       <Button onClick={() => void handleIsdaExtract()} disabled={isdaExtracting}>
-                        <Upload className="mr-2 h-4 w-4" />
+                        {isdaExtracting ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
                         {isdaExtracting ? "Extracting..." : "Run ISDA extraction"}
                       </Button>
                       {isdaLatest ? (
