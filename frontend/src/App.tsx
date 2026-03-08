@@ -116,7 +116,7 @@ const emptySsiLatest: SsiLatest = {
 };
 
 export default function App() {
-  const [workflow, setWorkflow] = useState<Workflow>("ssi");
+  const [workflow, setWorkflow] = useState<Workflow>("isda");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [ssiTab, setSsiTab] = useState<"overview" | "database">("overview");
   const [isdaTab, setIsdaTab] = useState<"overview" | "database">("overview");
@@ -292,6 +292,7 @@ export default function App() {
   const filteredCash = filterRows(ssiLatest.structured?.cash_settlement ?? [], deferredSsiLatestSearch);
   const latestIsdaMappingSummary = isdaLatest?.structured.mapping_summary ?? null;
   const storedIsdaMappingSummary = getIsdaMappingSummary(isdaContext?.extraction_json);
+  const pageTitle = workflow === "isda" ? "ISDA Netting Review Extraction" : "SSI Extraction";
 
   async function handleSsiExtract() {
     if (!ssiUploadFile) {
@@ -514,7 +515,7 @@ export default function App() {
                 active={workflow === "ssi"}
                 collapsed={sidebarCollapsed}
                 icon={<Database className="h-4 w-4" />}
-                title="SSI extraction"
+                title="SSI Extraction"
                 description="PDF intake and review"
                 onClick={() => setWorkflow("ssi")}
               />
@@ -522,7 +523,7 @@ export default function App() {
                 active={workflow === "isda"}
                 collapsed={sidebarCollapsed}
                 icon={<FileSearch className="h-4 w-4" />}
-                title="ISDA netting review"
+                title="ISDA Netting Review Extraction"
                 description="DOCX extraction and document review"
                 onClick={() => setWorkflow("isda")}
               />
@@ -536,9 +537,7 @@ export default function App() {
             <div className="absolute -right-10 top-6 h-32 w-32 rounded-full bg-[hsl(var(--accent)/0.18)] blur-3xl" />
             <div className="absolute bottom-0 left-1/3 h-28 w-28 rounded-full bg-[hsl(var(--accent-2)/0.15)] blur-3xl" />
             <div className="relative">
-              <h1 className="font-display text-4xl leading-tight text-balance md:text-6xl">
-                SSI and ISDA Data Extractor
-              </h1>
+              <h1 className="font-display text-4xl leading-tight text-balance md:text-6xl">{pageTitle}</h1>
             </div>
           </header>
 
