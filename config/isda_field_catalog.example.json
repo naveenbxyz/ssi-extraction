@@ -1,0 +1,12 @@
+[
+  {
+    "attributeId": "ATTR-001",
+    "attributeArea": "Agreement",
+    "attributeName": "Reviewer Name",
+    "formType": "text",
+    "allowedValuesRaw": "",
+    "allowedValues": null,
+    "populationMethod": "manual",
+    "category": "ISDA"
+  }
+]

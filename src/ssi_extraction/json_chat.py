@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Optional
 
 from .llm_client import LocalOpenAICompatibleClient
 from .models import LLMSettings
@@ -29,7 +29,7 @@ def answer_question_from_json(
     settings: LLMSettings,
     extraction_payload: dict[str, Any],
     question: str,
-    system_prompt: str | None = None,
+    system_prompt: Optional[str] = None,
     task_label: str = "json_chat",
 ) -> str:
     client = LocalOpenAICompatibleClient(settings)

@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 import re
 import sqlite3
-from typing import Any
+from typing import Any, Optional, Union
 
 from .models import CanonicalExtraction
 
@@ -55,7 +55,7 @@ def _find_first_account_number(*texts: str) -> str:
     return ""
 
 
-def _build_source(source: Any) -> tuple[int | None, int | None, int | None]:
+def _build_source(source: Any) -> tuple[Optional[int], Optional[int], Optional[int]]:
     if not isinstance(source, dict):
         return None, None, None
     page = source.get("page_number")
@@ -68,7 +68,7 @@ def _build_source(source: Any) -> tuple[int | None, int | None, int | None]:
     )
 
 
-def _connect(db_path: str | Path) -> sqlite3.Connection:
+def _connect(db_path: Union[str, Path]) -> sqlite3.Connection:
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
@@ -195,7 +195,7 @@ def _normalize_cash_record(record: dict[str, Any], run_id: int) -> dict[str, Any
     }
 
 
-def initialize_db(db_path: str | Path) -> None:
+def initialize_db(db_path: Union[str, Path]) -> None:
     logger.info("SQLite initialize started db_path=%s", db_path)
     with _connect(db_path) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
@@ -303,7 +303,7 @@ def initialize_db(db_path: str | Path) -> None:
     logger.info("SQLite initialize completed db_path=%s", db_path)
 
 
-def refresh_db(db_path: str | Path) -> None:
+def refresh_db(db_path: Union[str, Path]) -> None:
     logger.info("SQLite refresh started db_path=%s", db_path)
     with _connect(db_path) as conn:
         conn.execute("DELETE FROM standard_ssi")
@@ -317,11 +317,11 @@ def refresh_db(db_path: str | Path) -> None:
 
 
 def persist_extraction(
-    db_path: str | Path,
+    db_path: Union[str, Path],
     source_file: str,
     result: CanonicalExtraction,
     page_count: int,
-    raw_pdf_payload: list[dict[str, Any]] | None = None,
+    raw_pdf_payload: Optional[list[dict[str, Any]]] = None,
     replace_existing: bool = True,
 ) -> dict[str, int]:
     initialize_db(db_path)
@@ -410,7 +410,7 @@ def persist_extraction(
     return stats
 
 
-def get_db_summary(db_path: str | Path) -> dict[str, int]:
+def get_db_summary(db_path: Union[str, Path]) -> dict[str, int]:
     initialize_db(db_path)
     with _connect(db_path) as conn:
         row = conn.execute(
@@ -438,7 +438,7 @@ def get_db_summary(db_path: str | Path) -> dict[str, int]:
     }
 
 
-def execute_select_query(db_path: str | Path, query: str, params: tuple[Any, ...] = ()) -> list[sqlite3.Row]:
+def execute_select_query(db_path: Union[str, Path], query: str, params: tuple[Any, ...] = ()) -> list[sqlite3.Row]:
     stripped = query.strip().lower()
     if not (stripped.startswith("select") or stripped.startswith("with")):
         raise ValueError("Only SELECT queries are allowed")
@@ -463,7 +463,7 @@ def _build_search_clause(columns: list[str], search_term: str) -> tuple[str, tup
     return clause, params
 
 
-def get_standard_ssi_view(db_path: str | Path, search_term: str = "") -> list[dict[str, Any]]:
+def get_standard_ssi_view(db_path: Union[str, Path], search_term: str = "") -> list[dict[str, Any]]:
     search_clause, params = _build_search_clause(
         [
             "country_market",
@@ -502,7 +502,7 @@ def get_standard_ssi_view(db_path: str | Path, search_term: str = "") -> list[di
     return rows_to_dicts(rows)
 
 
-def get_us_ssi_view(db_path: str | Path, search_term: str = "") -> list[dict[str, Any]]:
+def get_us_ssi_view(db_path: Union[str, Path], search_term: str = "") -> list[dict[str, Any]]:
     search_clause, params = _build_search_clause(
         [
             "instruction_type",
@@ -539,7 +539,7 @@ def get_us_ssi_view(db_path: str | Path, search_term: str = "") -> list[dict[str
     return rows_to_dicts(rows)
 
 
-def get_cash_settlement_view(db_path: str | Path, search_term: str = "") -> list[dict[str, Any]]:
+def get_cash_settlement_view(db_path: Union[str, Path], search_term: str = "") -> list[dict[str, Any]]:
     search_clause, params = _build_search_clause(
         [
             "currency",
@@ -580,7 +580,7 @@ def get_cash_settlement_view(db_path: str | Path, search_term: str = "") -> list
     return rows_to_dicts(rows)
 
 
-def get_latest_extraction_payload(db_path: str | Path) -> dict[str, Any] | None:
+def get_latest_extraction_payload(db_path: Union[str, Path]) -> Optional[dict[str, Any]]:
     initialize_db(db_path)
     with _connect(db_path) as conn:
         row = conn.execute(
@@ -609,7 +609,7 @@ def get_latest_extraction_payload(db_path: str | Path) -> dict[str, Any] | None:
     return parsed
 
 
-def get_latest_raw_pdf_payload(db_path: str | Path) -> list[dict[str, Any]] | None:
+def get_latest_raw_pdf_payload(db_path: Union[str, Path]) -> Optional[list[dict[str, Any]]]:
     initialize_db(db_path)
     with _connect(db_path) as conn:
         row = conn.execute(
@@ -638,7 +638,7 @@ def get_latest_raw_pdf_payload(db_path: str | Path) -> list[dict[str, Any]] | No
     return parsed
 
 
-def get_latest_run_metadata(db_path: str | Path) -> dict[str, Any] | None:
+def get_latest_run_metadata(db_path: Union[str, Path]) -> Optional[dict[str, Any]]:
     initialize_db(db_path)
     with _connect(db_path) as conn:
         row = conn.execute(

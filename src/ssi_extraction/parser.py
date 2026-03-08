@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, Optional, Tuple, Union
 
 
 def extract_json_object(text: str) -> dict[str, Any]:
@@ -35,7 +35,7 @@ def extract_json_object(text: str) -> dict[str, Any]:
     raise ValueError("Model response does not contain a valid JSON object")
 
 
-def normalize_chunk_result(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]] | list[str]]:
+def normalize_chunk_result(payload: dict[str, Any]) -> dict[str, Union[list[dict[str, Any]], list[str]]]:
     return {
         "records": payload.get("records") or [],
         "us_securities_settlement": payload.get("us_securities_settlement") or [],
@@ -75,7 +75,7 @@ def _find_matching_bracket(text: str, start_idx: int, open_char: str, close_char
     return -1
 
 
-def _extract_array_text(text: str, key: str) -> str | None:
+def _extract_array_text(text: str, key: str) -> Optional[str]:
     pattern = re.compile(rf'"{re.escape(key)}"\s*:\s*\[', re.IGNORECASE)
     match = pattern.search(text)
     if not match:
@@ -190,7 +190,7 @@ def _recover_array_objects(text: str, key: str) -> tuple[list[dict[str, Any]], l
 
 def parse_chunk_result_with_recovery(
     text: str,
-) -> tuple[dict[str, list[dict[str, Any]] | list[str]], list[str]]:
+) -> Tuple[dict[str, Union[list[dict[str, Any]], list[str]]], list[str]]:
     """
     Parse model output with tolerant recovery.
 
@@ -218,7 +218,7 @@ def parse_chunk_result_with_recovery(
     warnings.extend(cash_warnings)
     warnings.extend(note_warnings)
 
-    payload: dict[str, list[dict[str, Any]] | list[str]] = {
+    payload: dict[str, Union[list[dict[str, Any]], list[str]]] = {
         "records": records,
         "us_securities_settlement": us_rows,
         "cash_settlement": cash_rows,

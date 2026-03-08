@@ -22,6 +22,7 @@ Replace the original single-page Streamlit interface with a web application that
   - file upload handling
   - config loading
   - extraction pipeline execution
+  - optional field-catalog-assisted ISDA mapping
   - SQLite summaries and table views
   - read-only SQL execution
   - chat endpoints grounded in extracted JSON
@@ -155,6 +156,16 @@ Chat is intentionally based on extracted JSON payloads rather than table rows al
 - the structured payload preserves more source context
 - it avoids implying that SQLite tables are the full truth
 - it matches how the existing extraction logic already thinks about context
+
+### Why the ISDA field catalog is external
+
+The large 201-field catalog is treated as an external JSON artifact rather than hardcoded application data because:
+
+- it can change independently of UI iterations
+- it belongs to the data model domain, not the frontend
+- the airgapped workflow makes file-based handoff practical
+
+The current design expects the backend to load that file from disk and feed it into extraction-time matching.
 
 ### Why read-only SQL remains in the product
 

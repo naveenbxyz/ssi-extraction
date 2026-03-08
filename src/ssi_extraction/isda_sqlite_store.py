@@ -4,10 +4,10 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sqlite3
-from typing import Any
+from typing import Any, Optional, Union
 
 
-def _connect(db_path: str | Path) -> sqlite3.Connection:
+def _connect(db_path: Union[str, Path]) -> sqlite3.Connection:
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
@@ -16,7 +16,7 @@ def _connect(db_path: str | Path) -> sqlite3.Connection:
     return conn
 
 
-def initialize_isda_db(db_path: str | Path) -> None:
+def initialize_isda_db(db_path: Union[str, Path]) -> None:
     with _connect(db_path) as conn:
         conn.execute(
             """
@@ -91,7 +91,7 @@ def _normalize_field_entries(payload: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def upsert_isda_document(
-    db_path: str | Path,
+    db_path: Union[str, Path],
     source_file: str,
     country_key: str,
     extraction_payload: dict[str, Any],
@@ -160,7 +160,7 @@ def upsert_isda_document(
     }
 
 
-def get_isda_summary(db_path: str | Path) -> dict[str, int]:
+def get_isda_summary(db_path: Union[str, Path]) -> dict[str, int]:
     initialize_isda_db(db_path)
     with _connect(db_path) as conn:
         row = conn.execute(
@@ -179,7 +179,7 @@ def get_isda_summary(db_path: str | Path) -> dict[str, int]:
     }
 
 
-def list_isda_documents(db_path: str | Path) -> list[dict[str, Any]]:
+def list_isda_documents(db_path: Union[str, Path]) -> list[dict[str, Any]]:
     initialize_isda_db(db_path)
     with _connect(db_path) as conn:
         rows = conn.execute(
@@ -192,7 +192,7 @@ def list_isda_documents(db_path: str | Path) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
-def get_isda_document_context(db_path: str | Path, doc_id: int) -> dict[str, Any] | None:
+def get_isda_document_context(db_path: Union[str, Path], doc_id: int) -> Optional[dict[str, Any]]:
     initialize_isda_db(db_path)
     with _connect(db_path) as conn:
         row = conn.execute(
@@ -216,7 +216,7 @@ def get_isda_document_context(db_path: str | Path, doc_id: int) -> dict[str, Any
     return payload
 
 
-def get_isda_fields_view(db_path: str | Path, doc_id: int, search_term: str = "") -> list[dict[str, Any]]:
+def get_isda_fields_view(db_path: Union[str, Path], doc_id: int, search_term: str = "") -> list[dict[str, Any]]:
     initialize_isda_db(db_path)
     search_term = search_term.strip()
 
@@ -242,7 +242,7 @@ def get_isda_fields_view(db_path: str | Path, doc_id: int, search_term: str = ""
 
 
 def execute_isda_select_query(
-    db_path: str | Path,
+    db_path: Union[str, Path],
     query: str,
     params: tuple[Any, ...] = (),
 ) -> list[dict[str, Any]]:

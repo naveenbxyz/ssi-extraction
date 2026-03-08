@@ -7,7 +7,7 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const variants: Record<NonNullable<ButtonProps["variant"]>, string> = {
   primary:
-    "bg-accent text-white shadow-glow hover:bg-[hsl(var(--accent)/0.92)] disabled:bg-[hsl(var(--accent)/0.55)]",
+    "bg-accent text-white shadow-panel hover:bg-[hsl(var(--accent)/0.92)] disabled:bg-[hsl(var(--accent)/0.55)]",
   secondary:
     "bg-ink text-white hover:bg-[hsl(var(--ink)/0.92)] disabled:bg-[hsl(var(--ink)/0.55)]",
   ghost:

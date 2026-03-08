@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 
 @dataclass
@@ -46,7 +46,7 @@ class LLMSettings:
         return cls(**payload)
 
     @classmethod
-    def from_json_file(cls, path: str | Path) -> "LLMSettings":
+    def from_json_file(cls, path: Union[str, Path]) -> "LLMSettings":
         config_path = Path(path)
         raw = json.loads(config_path.read_text(encoding="utf-8"))
         if not isinstance(raw, dict):

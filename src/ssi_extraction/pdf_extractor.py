@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
+from typing import Union
 
 import pdfplumber
 
@@ -38,7 +39,7 @@ def _rows_from_table(table: list[list[object]], has_header: bool) -> list[list[s
     return normalized
 
 
-def extract_pdf_payload(pdf_path: str | Path) -> list[ExtractedPage]:
+def extract_pdf_payload(pdf_path: Union[str, Path]) -> list[ExtractedPage]:
     """Extract page text and tables from the full PDF."""
     logger.info("PDF extraction started path=%s", pdf_path)
     started = time.perf_counter()

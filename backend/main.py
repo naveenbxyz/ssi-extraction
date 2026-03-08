@@ -5,7 +5,7 @@ import logging
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -69,7 +69,7 @@ class SsiChatRequest(BaseModel):
     llm_config_path: str = DEFAULT_LLM_CONFIG
     db_path: str = DEFAULT_SSI_DB
     question: str = Field(min_length=1)
-    extraction_payload: dict[str, Any] | None = None
+    extraction_payload: Optional[dict[str, Any]] = None
 
 
 class IsdaChatRequest(BaseModel):
@@ -89,7 +89,7 @@ class FrontendDefaults(BaseModel):
 
 class BootstrapResponse(BaseModel):
     defaults: FrontendDefaults
-    llm_config: dict[str, Any] | None
+    llm_config: Optional[dict[str, Any]]
     isda_config_summary: dict[str, Any]
     ssi_summary: dict[str, int]
     isda_summary: dict[str, int]
@@ -166,7 +166,7 @@ def bootstrap(
     ssi_db_path: str = Query(DEFAULT_SSI_DB),
     isda_db_path: str = Query(DEFAULT_ISDA_DB),
 ) -> BootstrapResponse:
-    llm_config: dict[str, Any] | None
+    llm_config: Optional[dict[str, Any]]
     try:
         llm_config = _load_llm_settings(llm_config_path).to_redacted_dict()
     except HTTPException:

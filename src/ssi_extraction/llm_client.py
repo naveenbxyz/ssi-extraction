@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from typing import Any, Optional, Tuple
 
 import httpx
 
@@ -127,10 +127,10 @@ class LocalOpenAICompatibleClient:
             return getattr(payload, field)
         return default
 
-    def _collect_text_from_modern_stream(self, stream: Any) -> tuple[str, int, float | None]:
+    def _collect_text_from_modern_stream(self, stream: Any) -> Tuple[str, int, Optional[float]]:
         parts: list[str] = []
         events = 0
-        first_token_s: float | None = None
+        first_token_s: Optional[float] = None
         started = time.perf_counter()
 
         for chunk in stream:
@@ -156,10 +156,10 @@ class LocalOpenAICompatibleClient:
 
         return "".join(parts), events, first_token_s
 
-    def _collect_text_from_legacy_stream(self, stream: Any) -> tuple[str, int, float | None]:
+    def _collect_text_from_legacy_stream(self, stream: Any) -> Tuple[str, int, Optional[float]]:
         parts: list[str] = []
         events = 0
-        first_token_s: float | None = None
+        first_token_s: Optional[float] = None
         started = time.perf_counter()
 
         for chunk in stream:

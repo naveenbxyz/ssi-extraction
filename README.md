@@ -124,8 +124,57 @@ This file controls:
 - canonical field names
 - alias mapping
 - question-number mapping
+- field catalog path
 - extraction prompt behavior
 - chat prompt behavior
+
+### ISDA field catalog
+
+If your data model team provides a JSON file with the 201 target attributes, place it in the repo and point `field_catalog_path` at it.
+
+Recommended location:
+
+```text
+config/isda_field_catalog.json
+```
+
+The default `config/isda_extraction_config.json` now includes:
+
+```json
+"field_catalog_path": "config/isda_field_catalog.json"
+```
+
+Accepted catalog formats:
+
+- a JSON array of field objects
+- a JSON object with a top-level `fields` array
+
+Each field object can include:
+
+- `attributeId`
+- `attributeArea`
+- `attributeName`
+- `formType`
+- `allowedValuesRaw`
+- `allowedValues`
+- `populationMethod`
+- `category`
+
+There is also a template file at `config/isda_field_catalog.example.json`.
+
+When the catalog file is present, the ISDA extraction pipeline will:
+
+- load the field catalog from disk during config loading
+- include the catalog entries in the LLM extraction prompt
+- use `attributeName` to improve rule-based matching when possible
+- attach catalog metadata to extracted `normalized_fields` and `additional_fields` entries when a match is found
+
+Important:
+
+- matching should be driven by `attributeName`
+- `attributeId` is treated as metadata and may contain category prefixes such as `Collateral:`, `ISDA:`, or `Generic:`
+
+The app still keeps `field_name`, `value`, `source`, and `notes` for compatibility, while adding the catalog metadata alongside them.
 
 ## SSI workflow
 

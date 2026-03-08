@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 import re
+from typing import Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ def _is_serial_number(text: str) -> bool:
     return re.fullmatch(r"\d+[.)]?", token) is not None
 
 
-def _parse_serial_number(text: str) -> int | None:
+def _parse_serial_number(text: str) -> Optional[int]:
     token = text.strip()
     if not token:
         return None
@@ -38,7 +39,7 @@ def _parse_serial_number(text: str) -> int | None:
         return None
 
 
-def _extract_question_number(serial_cell: str, key_cell: str) -> int | None:
+def _extract_question_number(serial_cell: str, key_cell: str) -> Optional[int]:
     serial_num = _parse_serial_number(serial_cell)
     if serial_num is not None:
         return serial_num
@@ -56,7 +57,7 @@ def _strip_question_number_prefix(key: str) -> str:
     return re.sub(r"^\s*\d+\s*[.)-]\s*", "", key).strip()
 
 
-def _row_to_key_value(cells: list[str]) -> tuple[str, str, int | None] | None:
+def _row_to_key_value(cells: list[str]) -> Optional[Tuple[str, str, Optional[int]]]:
     if not any(cells):
         return None
 
@@ -93,7 +94,7 @@ def _row_to_key_value(cells: list[str]) -> tuple[str, str, int | None] | None:
     return None
 
 
-def extract_docx_payload(docx_path: str | Path) -> dict:
+def extract_docx_payload(docx_path: Union[str, Path]) -> dict:
     logger.info("ISDA DOCX extraction started path=%s", docx_path)
     try:
         from docx import Document  # type: ignore

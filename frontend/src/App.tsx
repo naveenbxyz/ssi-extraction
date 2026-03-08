@@ -549,10 +549,11 @@ export default function App() {
                     <SectionHeader title="Upload SSI document" />
                     <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
                       <Field label="PDF file">
-                        <Input
-                          type="file"
+                        <FilePicker
                           accept=".pdf"
-                          onChange={(event) => setSsiUploadFile(event.target.files?.[0] ?? null)}
+                          file={ssiUploadFile}
+                          onChange={(file) => setSsiUploadFile(file)}
+                          buttonLabel="Select PDF"
                         />
                       </Field>
                       <label className="flex items-center gap-3 rounded-2xl border border-line bg-white px-4 py-3 text-sm text-ink">
@@ -698,10 +699,11 @@ export default function App() {
                     <SectionHeader title="Upload ISDA document" />
                     <div className="mt-5 grid gap-4 md:grid-cols-2">
                       <Field label="DOCX file">
-                        <Input
-                          type="file"
+                        <FilePicker
                           accept=".docx"
-                          onChange={(event) => setIsdaUploadFile(event.target.files?.[0] ?? null)}
+                          file={isdaUploadFile}
+                          onChange={(file) => setIsdaUploadFile(file)}
+                          buttonLabel="Select DOCX"
                         />
                       </Field>
                       <Field label="Country key override">
@@ -854,6 +856,36 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
     <label className="block">
       <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-muted">{label}</span>
       {children}
+    </label>
+  );
+}
+
+function FilePicker({
+  accept,
+  file,
+  onChange,
+  buttonLabel,
+}: {
+  accept: string;
+  file: File | null;
+  onChange: (file: File | null) => void;
+  buttonLabel: string;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-3xl border border-line bg-white px-4 py-4 transition hover:border-accent hover:bg-[hsl(var(--accent)/0.05)]">
+      <input
+        type="file"
+        accept={accept}
+        className="sr-only"
+        onChange={(event) => onChange(event.target.files?.[0] ?? null)}
+      />
+      <span className="inline-flex items-center rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white">
+        <Upload className="mr-2 h-4 w-4" />
+        {buttonLabel}
+      </span>
+      <span className="min-w-0 flex-1 text-right text-sm text-muted">
+        <span className="block truncate">{file ? file.name : "No file selected"}</span>
+      </span>
     </label>
   );
 }

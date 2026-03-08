@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any
+from typing import Any, Optional
 
 from .isda_config import load_isda_config
 from .isda_docx_extractor import extract_docx_payload
@@ -12,6 +12,17 @@ from .models import LLMSettings
 from .parser import extract_json_object
 
 logger = logging.getLogger(__name__)
+
+FIELD_CATALOG_KEYS = [
+    "attributeId",
+    "attributeArea",
+    "attributeName",
+    "formType",
+    "allowedValuesRaw",
+    "allowedValues",
+    "populationMethod",
+    "category",
+]
 
 
 def _normalize_key(text: str) -> str:
@@ -32,6 +43,50 @@ def _infer_field_name(raw_key: str) -> str:
     return key[:120]
 
 
+def _extract_catalog_metadata(entry: Optional[dict[str, Any]]) -> dict[str, Any]:
+    if not isinstance(entry, dict):
+        return {}
+    metadata: dict[str, Any] = {}
+    for key in FIELD_CATALOG_KEYS:
+        if key in entry:
+            metadata[key] = entry.get(key)
+    return metadata
+
+
+def _build_field_catalog_index(field_catalog: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    index: dict[str, dict[str, Any]] = {}
+    for entry in field_catalog:
+        # Match on attributeName, not attributeId. attributeId may include category
+        # prefixes like "Collateral:" or "ISDA:" and is metadata, not the canonical
+        # comparison key for extraction matching.
+        attribute_name = str(entry.get("attributeName", "")).strip()
+        if not attribute_name:
+            continue
+        index[_normalize_key(attribute_name)] = entry
+    return index
+
+
+def _match_field_catalog_entry(
+    key: str,
+    field_catalog_index: dict[str, dict[str, Any]],
+) -> Optional[dict[str, Any]]:
+    normalized = _normalize_key(key)
+    if normalized in field_catalog_index:
+        return field_catalog_index[normalized]
+
+    best_match: Optional[dict[str, Any]] = None
+    best_score = 0
+    for catalog_key, entry in field_catalog_index.items():
+        if not catalog_key:
+            continue
+        if catalog_key in normalized or normalized in catalog_key:
+            score = len(catalog_key)
+            if score > best_score:
+                best_match = entry
+                best_score = score
+    return best_match
+
+
 def _build_alias_index(field_aliases: dict[str, list[str]]) -> dict[str, str]:
     index: dict[str, str] = {}
     for canonical, aliases in field_aliases.items():
@@ -41,7 +96,7 @@ def _build_alias_index(field_aliases: dict[str, list[str]]) -> dict[str, str]:
     return index
 
 
-def _match_canonical_field(key: str, alias_index: dict[str, str]) -> str | None:
+def _match_canonical_field(key: str, alias_index: dict[str, str]) -> Optional[str]:
     normalized = _normalize_key(key)
     if normalized in alias_index:
         return alias_index[normalized]
@@ -55,6 +110,10 @@ def _match_canonical_field(key: str, alias_index: dict[str, str]) -> str | None:
 def _rule_based_seed(payload: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     field_aliases = config.get("field_aliases", {})
     alias_index = _build_alias_index(field_aliases)
+    field_catalog = config.get("field_catalog", [])
+    field_catalog_index = (
+        _build_field_catalog_index(field_catalog) if isinstance(field_catalog, list) else {}
+    )
     question_number_map_raw = config.get("question_number_field_map", {})
     question_number_map: dict[int, str] = {}
     if isinstance(question_number_map_raw, dict):
@@ -66,8 +125,8 @@ def _rule_based_seed(payload: dict[str, Any], config: dict[str, Any]) -> dict[st
             if isinstance(value, str) and value.strip():
                 question_number_map[question_number] = value.strip()
 
-    merged_values: dict[str, dict[str, str]] = {}
-    additional_fields: list[dict[str, str]] = []
+    merged_values: dict[str, dict[str, Any]] = {}
+    additional_fields: list[dict[str, Any]] = []
 
     for item in payload.get("key_value_candidates", []):
         key = str(item.get("key", "")).strip()
@@ -77,9 +136,12 @@ def _rule_based_seed(payload: dict[str, Any], config: dict[str, Any]) -> dict[st
         if not key or not value:
             continue
 
+        catalog_entry = _match_field_catalog_entry(key, field_catalog_index)
         canonical = question_number_map.get(question_number) if question_number is not None else None
         if canonical is None:
             canonical = _match_canonical_field(key, alias_index)
+        if canonical is None and catalog_entry is not None:
+            canonical = _infer_field_name(str(catalog_entry.get("attributeName", "")))
 
         if canonical:
             existing = merged_values.get(canonical)
@@ -94,6 +156,9 @@ def _rule_based_seed(payload: dict[str, Any], config: dict[str, Any]) -> dict[st
                     "value": value,
                     "source": "table",
                     "notes": source_note,
+                    **_extract_catalog_metadata(
+                        catalog_entry or _match_field_catalog_entry(canonical, field_catalog_index)
+                    ),
                 }
         else:
             inferred = _infer_field_name(key)
@@ -110,6 +175,9 @@ def _rule_based_seed(payload: dict[str, Any], config: dict[str, Any]) -> dict[st
                         "value": value,
                         "source": "table",
                         "notes": note,
+                        **_extract_catalog_metadata(
+                            catalog_entry or _match_field_catalog_entry(inferred, field_catalog_index)
+                        ),
                     }
             else:
                 additional_fields.append(
@@ -118,6 +186,7 @@ def _rule_based_seed(payload: dict[str, Any], config: dict[str, Any]) -> dict[st
                         "value": value,
                         "source": "table",
                         "notes": "Unmapped table key",
+                        **_extract_catalog_metadata(catalog_entry),
                     }
                 )
 
@@ -152,6 +221,14 @@ def _build_extraction_user_prompt(raw_payload: dict[str, Any], seed: dict[str, A
                 "value": "string",
                 "source": "table | narrative | inferred",
                 "notes": "string",
+                "attributeId": "string | empty",
+                "attributeArea": "string | empty",
+                "attributeName": "string | empty",
+                "formType": "string | empty",
+                "allowedValuesRaw": "string | empty",
+                "allowedValues": ["string"] or None,
+                "populationMethod": "string | empty",
+                "category": "string | empty",
             }
         ],
         "additional_fields": [
@@ -160,6 +237,14 @@ def _build_extraction_user_prompt(raw_payload: dict[str, Any], seed: dict[str, A
                 "value": "string",
                 "source": "table | narrative | inferred",
                 "notes": "string",
+                "attributeId": "string | empty",
+                "attributeArea": "string | empty",
+                "attributeName": "string | empty",
+                "formType": "string | empty",
+                "allowedValuesRaw": "string | empty",
+                "allowedValues": ["string"] or None,
+                "populationMethod": "string | empty",
+                "category": "string | empty",
             }
         ],
         "notes": ["string"],
@@ -168,6 +253,7 @@ def _build_extraction_user_prompt(raw_payload: dict[str, Any], seed: dict[str, A
     canonical_fields = config.get("canonical_fields", [])
     field_aliases = config.get("field_aliases", {})
     question_number_map = config.get("question_number_field_map", {})
+    field_catalog = config.get("field_catalog", [])
 
     return (
         "Extract ISDA Netting Review data into JSON. Use table values as primary source of truth. "
@@ -182,19 +268,40 @@ def _build_extraction_user_prompt(raw_payload: dict[str, Any], seed: dict[str, A
         "If a table attribute does not map to a canonical field, create a meaningful snake_case field_name "
         "and keep it under normalized_fields.\n"
         "Only use additional_fields for truly miscellaneous content that cannot be represented as a field.\n\n"
+        "If a field catalog is provided, match extracted fields to the closest catalog entry.\n"
+        "Use attributeName as the primary matching key. Do not rely on attributeId text for matching, "
+        "because attributeId may include category prefixes such as 'Collateral:', 'ISDA:', or 'Generic:'.\n"
+        "Keep field_name as a meaningful snake_case identifier for application compatibility.\n"
+        "When a confident catalog match exists, populate attributeId, attributeArea, attributeName, "
+        "formType, allowedValuesRaw, allowedValues, populationMethod, and category from the catalog entry.\n"
+        "When no confident catalog match exists, leave those catalog fields empty or null and explain uncertainty in notes.\n\n"
         f"Canonical field names to prefer:\n{json.dumps(canonical_fields, ensure_ascii=True)}\n\n"
         f"Field alias mapping:\n{json.dumps(field_aliases, ensure_ascii=True)}\n\n"
         f"Question number mapping (if available):\n{json.dumps(question_number_map, ensure_ascii=True)}\n\n"
+        f"Field catalog entries (if available):\n{json.dumps(field_catalog, ensure_ascii=True)}\n\n"
         f"Rule-based seed:\n{json.dumps(seed, ensure_ascii=True)}\n\n"
         f"DOCX raw payload:\n{json.dumps(raw_payload, ensure_ascii=True)}"
     )
 
 
-def _normalize_field_entries(entries: Any) -> list[dict[str, str]]:
+def _normalize_allowed_values(value: Any) -> Optional[list[str]]:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        normalized = [str(item).strip() for item in value if str(item).strip()]
+        return normalized or None
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return [cleaned] if cleaned else None
+    cleaned = str(value).strip()
+    return [cleaned] if cleaned else None
+
+
+def _normalize_field_entries(entries: Any) -> list[dict[str, Any]]:
     if not isinstance(entries, list):
         return []
 
-    normalized: list[dict[str, str]] = []
+    normalized: list[dict[str, Any]] = []
     for item in entries:
         if not isinstance(item, dict):
             continue
@@ -210,16 +317,24 @@ def _normalize_field_entries(entries: Any) -> list[dict[str, str]]:
                 "value": value,
                 "source": source,
                 "notes": notes,
+                "attributeId": str(item.get("attributeId", "")).strip(),
+                "attributeArea": str(item.get("attributeArea", "")).strip(),
+                "attributeName": str(item.get("attributeName", "")).strip(),
+                "formType": str(item.get("formType", "")).strip(),
+                "allowedValuesRaw": str(item.get("allowedValuesRaw", "")).strip(),
+                "allowedValues": _normalize_allowed_values(item.get("allowedValues")),
+                "populationMethod": str(item.get("populationMethod", "")).strip(),
+                "category": str(item.get("category", "")).strip(),
             }
         )
     return normalized
 
 
 def _promote_additional_to_normalized(
-    additional_entries: list[dict[str, str]],
-) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
-    promoted: list[dict[str, str]] = []
-    residual: list[dict[str, str]] = []
+    additional_entries: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    promoted: list[dict[str, Any]] = []
+    residual: list[dict[str, Any]] = []
 
     for item in additional_entries:
         inferred = _infer_field_name(item.get("field_name", ""))
@@ -230,6 +345,7 @@ def _promote_additional_to_normalized(
                     "value": item.get("value", ""),
                     "source": item.get("source", "") or "inferred",
                     "notes": f"{item.get('notes', '')} | promoted_from_additional".strip(" |"),
+                    **_extract_catalog_metadata(item),
                 }
             )
         else:
@@ -238,8 +354,8 @@ def _promote_additional_to_normalized(
     return promoted, residual
 
 
-def _dedupe_fields(fields: list[dict[str, str]]) -> list[dict[str, str]]:
-    by_name: dict[str, dict[str, str]] = {}
+def _dedupe_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_name: dict[str, dict[str, Any]] = {}
     for field in fields:
         name = field["field_name"]
         if name not in by_name:
@@ -251,10 +367,13 @@ def _dedupe_fields(fields: list[dict[str, str]]) -> list[dict[str, str]]:
             current["value"] = f"{current['value']} ; {field['value']}"
             if current.get("notes") and field.get("notes"):
                 current["notes"] = f"{current['notes']} | {field['notes']}"
+        for key in FIELD_CATALOG_KEYS:
+            if (not current.get(key)) and field.get(key):
+                current[key] = field.get(key)
     return list(by_name.values())
 
 
-def _merge_llm_and_seed(llm_payload: dict[str, Any] | None, seed: dict[str, Any]) -> dict[str, Any]:
+def _merge_llm_and_seed(llm_payload: Optional[dict[str, Any]], seed: dict[str, Any]) -> dict[str, Any]:
     if llm_payload is None:
         return seed
 
@@ -302,7 +421,7 @@ def run_isda_extraction_pipeline(
     raw_payload = extract_docx_payload(docx_path)
     seed = _rule_based_seed(raw_payload, config)
 
-    llm_payload: dict[str, Any] | None = None
+    llm_payload: Optional[dict[str, Any]] = None
     client = LocalOpenAICompatibleClient(settings)
     try:
         client.log_connectivity()

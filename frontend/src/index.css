@@ -8,8 +8,8 @@
     --surface: 39 47% 96%;
     --panel: 0 0% 100%;
     --line: 214 21% 82%;
-    --accent: 19 66% 49%;
-    --accent-2: 196 48% 32%;
+    --accent: 207 76% 46%;
+    --accent-2: 196 66% 54%;
     --muted: 211 18% 45%;
     --success: 154 45% 36%;
     --danger: 0 64% 45%;
@@ -23,8 +23,8 @@
     @apply bg-surface text-ink font-sans antialiased;
     min-height: 100vh;
     background-image:
-      radial-gradient(circle at top left, rgba(198, 95, 48, 0.18), transparent 32%),
-      radial-gradient(circle at top right, rgba(37, 116, 140, 0.12), transparent 30%),
+      radial-gradient(circle at top left, rgba(46, 128, 212, 0.18), transparent 32%),
+      radial-gradient(circle at top right, rgba(107, 192, 233, 0.16), transparent 30%),
       linear-gradient(180deg, #fcf6ef 0%, #f2efe8 100%);
   }
 
