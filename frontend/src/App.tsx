@@ -1,5 +1,6 @@
 import { startTransition, useDeferredValue, useEffect, useState, type ReactNode } from "react";
 import { Bot, Database, FileSearch, LoaderCircle, MessageSquare, PanelLeftClose, PanelLeftOpen, Search, ShieldCheck, TableProperties, Upload } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -1235,17 +1236,60 @@ function ChatPanel({
                 )}
               >
                 <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted">{message.role}</p>
-                <p className="whitespace-pre-wrap">{message.content}</p>
+                {message.role === "assistant" ? (
+                  <div className="space-y-2 text-ink">
+                    <ReactMarkdown
+                      components={{
+                        h1: ({ children }) => <h1 className="mt-3 text-lg font-semibold">{children}</h1>,
+                        h2: ({ children }) => <h2 className="mt-3 text-base font-semibold">{children}</h2>,
+                        h3: ({ children }) => <h3 className="mt-3 text-sm font-semibold">{children}</h3>,
+                        p: ({ children }) => <p className="whitespace-pre-wrap">{children}</p>,
+                        ul: ({ children }) => <ul className="list-disc space-y-1 pl-5">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal space-y-1 pl-5">{children}</ol>,
+                        li: ({ children }) => <li>{children}</li>,
+                        code: ({ className, children }) =>
+                          className ? (
+                            <code className="block overflow-x-auto rounded-2xl bg-[hsl(var(--ink)/0.92)] px-4 py-3 text-[0.95em] text-white">
+                              {children}
+                            </code>
+                          ) : (
+                            <code className="rounded bg-[hsl(var(--ink)/0.08)] px-1 py-0.5 text-[0.95em]">{children}</code>
+                          ),
+                        pre: ({ children }) => <pre className="my-2">{children}</pre>,
+                        a: ({ href, children }) => (
+                          <a className="text-[hsl(var(--accent-2))] underline underline-offset-2" href={href} target="_blank" rel="noreferrer">
+                            {children}
+                          </a>
+                        ),
+                        strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
+                      }}
+                    >
+                      {message.content}
+                    </ReactMarkdown>
+                  </div>
+                ) : (
+                  <p className="whitespace-pre-wrap">{message.content}</p>
+                )}
               </div>
             ))
           )}
         </div>
       </div>
       <div className="space-y-4 rounded-3xl border border-line bg-[hsl(var(--ink)/0.03)] p-5">
-        <Textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
+        <Textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              onSubmit();
+            }
+          }}
+          placeholder={placeholder}
+        />
         <Button onClick={onSubmit} disabled={loading}>
           <Bot className="mr-2 h-4 w-4" />
-          {loading ? "Thinking..." : "Send question"}
+          {loading ? "Thinking..." : "Submit"}
         </Button>
       </div>
     </div>
