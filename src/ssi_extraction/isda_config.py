@@ -68,9 +68,17 @@ def _load_field_catalog_entries(config_path: Path, catalog_path_value: Any) -> l
     if not isinstance(catalog_path_value, str) or not catalog_path_value.strip():
         return []
 
-    catalog_path = Path(catalog_path_value.strip())
-    if not catalog_path.is_absolute():
-        catalog_path = (config_path.parent / catalog_path).resolve()
+    raw_catalog_path = Path(catalog_path_value.strip())
+    candidate_paths: list[Path]
+    if raw_catalog_path.is_absolute():
+        candidate_paths = [raw_catalog_path]
+    else:
+        candidate_paths = [
+            raw_catalog_path.resolve(),
+            (config_path.parent / raw_catalog_path).resolve(),
+        ]
+
+    catalog_path = next((candidate for candidate in candidate_paths if candidate.exists()), candidate_paths[0])
 
     if not catalog_path.exists():
         return []
