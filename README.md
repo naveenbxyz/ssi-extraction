@@ -1,63 +1,114 @@
 # SSI + ISDA Extraction App
 
-Minimal Streamlit application for two airgapped workflows:
+This project now runs as a split application:
 
-- SSI extraction from PDF (`pdfplumber` + LLM normalization)
-- ISDA Netting Review extraction from DOCX (`python-docx` + hybrid rule/LLM extraction)
+- FastAPI backend for SSI and ISDA extraction, SQLite persistence, read-only SQL, and chat endpoints
+- Vite + React frontend with Tailwind and shadcn-style UI primitives for uploads, review flows, and database exploration
+
+## Architecture
+
+### Backend
+
+- Entry point: `python3 app.py`
+- FastAPI app: `backend/main.py`
+- Existing extraction logic remains under `src/ssi_extraction`
+- Default API base URL: `http://127.0.0.1:8000`
+- Interactive docs: `http://127.0.0.1:8000/docs`
+
+### Frontend
+
+- App source: `frontend/`
+- Dev server: `http://127.0.0.1:5173`
 
 ## Run
 
+### 1. Install Python dependencies
+
 ```bash
-pip install -r requirements.txt
-streamlit run app.py
+python3 -m pip install -r requirements.txt
 ```
 
-## Workflow 1: SSI Extraction
+### 2. Start the FastAPI backend
 
-- Upload a PDF with SSI tables.
-- Extract + normalize into structured JSON via LLM.
-- Persist into SQLite (default: `data/ssi.sqlite`).
-- DB model is split into 3 tables:
-  - `standard_ssi`
-  - `us_ssi`
-  - `cash_settlement_ssi`
-- JSON Chat uses full extraction JSON context.
+```bash
+python3 app.py
+```
 
-## Workflow 2: ISDA Netting Review
+### 3. Install frontend dependencies
 
-- Upload one DOCX at a time.
-- DOCX is parsed with `python-docx` (paragraphs + tables + key/value candidates).
-- Hybrid extraction:
-  - rule-based field seeding from table rows
-  - LLM normalization into flexible JSON field list
-- Persist into separate SQLite DB (default: `data/isda_netting.sqlite`) with country-level upsert:
-  - new country -> insert as new document
-  - same country key -> replace only that country document
+```bash
+cd frontend
+npm install
+```
 
-ISDA DB tables:
+### 4. Start the frontend
+
+```bash
+cd frontend
+npm run dev
+```
+
+## SSI workflow
+
+- Upload a PDF with SSI tables
+- Extract and normalize data via the configured OpenAI-compatible endpoint
+- Persist results into SQLite at `data/ssi.sqlite` by default
+- Inspect:
+  - latest extraction payload
+  - normalized standard, US, and cash settlement views
+  - raw page payload from `pdfplumber`
+  - read-only SQL query results
+  - chat answers grounded in the extraction JSON
+
+SSI SQLite tables:
+
+- `extraction_runs`
+- `standard_ssi`
+- `us_ssi`
+- `cash_settlement_ssi`
+
+## ISDA workflow
+
+- Upload one DOCX at a time
+- Extract paragraphs, tables, and key/value candidates with `python-docx`
+- Merge rule-based field seeding with LLM normalization
+- Persist results into `data/isda_netting.sqlite` by default
+- Upsert per `country_key`:
+  - new country key inserts a new document
+  - existing country key replaces the stored document and its field rows
+
+ISDA SQLite tables:
+
 - `isda_documents`
 - `isda_fields`
 
 ## Config files
 
 ### LLM config
+
 `config/llm_config.json`
 
 ### ISDA extraction config
+
 `config/isda_extraction_config.json`
 
-This file contains:
-- `canonical_fields`
-- `field_aliases`
-- `extraction_system_prompt`
-- `chat_system_prompt`
+This file controls:
 
-You can edit this file to adjust mapping/prompt behavior without code changes.
+- canonical field names
+- alias mapping
+- extraction prompt behavior
+- chat prompt behavior
+
+## API surface
+
+The backend exposes endpoints for:
+
+- bootstrap and health checks
+- SSI extract, summary, latest payload, table views, SQL, and chat
+- ISDA extract, summary, document list, document fields, SQL, and chat
 
 ## Notes
 
-- Table values are prioritized over narrative content for ISDA extraction.
-- Both workflows persist:
-  - LLM structured JSON
-  - raw extraction payload (for audit/cross-check)
-- Chat features are context-based on full extracted JSON payloads.
+- Table values are still prioritized over narrative content for ISDA extraction.
+- Both workflows persist structured JSON and raw extraction payloads for auditability.
+- Chat answers are grounded in extracted JSON context rather than inferred from SQLite rows alone.
